@@ -1,4 +1,4 @@
-const socket = io("http://localhost:3000");
+const socket = io("https://trashtracktify.onrender.com");
 const map = L.map('map').setView([14.667, 120.967], 15);
 
 L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
