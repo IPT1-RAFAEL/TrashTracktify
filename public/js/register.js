@@ -325,27 +325,45 @@ popupContent.innerHTML = `
   </form>
 `;
 
-// Handle form submission
+// Handle form submission with clear feedback
 popupContent.querySelector('#popupForm').addEventListener('submit', async (e) => {
   e.preventDefault();
+
   const formData = new FormData(e.target);
   const data = Object.fromEntries(formData.entries());
   const msgBox = popupContent.querySelector('#popupMsg');
 
+  // Show loading message
+  msgBox.textContent = "⏳ Registering...";
+  msgBox.style.color = "blue";
+
   try {
-    const res = await fetch('/register', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify(data)
+    const res = await fetch("/register", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(data),
     });
 
-    const text = await res.text();
-    msgBox.textContent = text;
-    msgBox.style.color = res.ok ? 'green' : 'red';
+    const responseText = await res.text();
 
-    if (res.ok) e.target.reset();
-  } catch (err) {
-    msgBox.textContent = 'Error connecting to server';
-    msgBox.style.color = 'red';
+    if (res.ok) {
+      msgBox.textContent = "✅ Registration successful!";
+      msgBox.style.color = "green";
+
+      // Optional: show popup alert
+      alert("Registration successful! Welcome " + data.name + "!");
+      e.target.reset();
+    } else {
+      msgBox.textContent = `❌ Registration failed: ${responseText}`;
+      msgBox.style.color = "red";
+    }
+  } catch (error) {
+    msgBox.textContent = "⚠️ Server connection error. Please try again.";
+    msgBox.style.color = "red";
   }
+
+  // Hide the message after 4 seconds (optional)
+  setTimeout(() => {
+    msgBox.textContent = "";
+  }, 4000);
 });
