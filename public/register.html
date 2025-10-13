@@ -1,0 +1,79 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <title>Trashtrackify</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
+  <link rel="stylesheet" href="css/regi.css" />
+</head>
+<body>
+  <div class="container">
+    <!-- Left side: Schedule -->
+    <div class="schedule">
+      <h1>SCHEDULE</h1>
+
+      <div class="barangay">
+        <h2>Tugatog</h2>
+        <div class="days">
+          <span>MON</span><span>TUE</span><span>WED</span><span>THU</span><span>FRI</span><span>SAT</span><span>SUN</span>
+        </div>
+      </div>
+
+      <div class="barangay">
+        <h2>Acacia</h2>
+        <div class="days">
+          <span>MON</span><span>TUE</span><span>WED</span><span>THU</span><span>FRI</span><span>SAT</span><span>SUN</span>
+        </div>
+      </div>
+
+      <div class="barangay">
+        <h2>Tinajeros</h2>
+        <div class="days">
+          <span>MON</span><span>TUE</span><span>WED</span><span>THU</span><span>FRI</span><span>SAT</span><span>SUN</span>
+        </div>
+      </div>
+
+      <button id="openRegister">Register</button>
+    </div>
+
+    <!-- Right side: Map -->
+    <div class="map-container">
+      <div id="map"></div>
+    </div>
+  </div>
+
+  <!-- Register Popup -->
+  <div id="registerPopup" class="popup">
+    <div class="popup-content">
+      <img src="garbage-truck.png" alt="Truck" class="popup-icon">
+      <h1>Trashtrackify</h1>
+      <h3>Register</h3>
+      <form id="popupForm">
+        <input type="text" name="name" placeholder="Name" required>
+        <input type="text" name="phone" placeholder="Number (+639123456789)" required>
+        <select name="barangay" required>
+          <option value="">Select Barangay</option>
+          <option value="Tugatog">Tugatog</option>
+          <option value="Acacia">Acacia</option>
+          <option value="Tinajeros">Tinajeros</option>
+        </select>
+        <button type="submit">Done</button>
+        <div class="msg" id="popupMsg"></div>
+      </form>
+    </div>
+  </div>
+
+  <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+  <script src="https://unpkg.com/@turf/turf/turf.min.js"></script>
+  <script src="/socket.io/socket.io.js"></script>
+  <script src="js/register.js"></script>
+
+  <script>
+    // Popup logic
+    const popup = document.getElementById('registerPopup');
+    document.getElementById('openRegister').onclick = () => popup.classList.add('show');
+    popup.onclick = (e) => { if (e.target === popup) popup.classList.remove('show'); };
+  </script>
+</body>
+</html>
