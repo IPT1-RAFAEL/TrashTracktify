@@ -306,66 +306,38 @@ Object.entries(streetGroups).forEach(([barangay, streets]) => {
   });
 });
 
-// Register popup
-const popupContent = document.createElement('div');
-popupContent.classList.add('register-popup');
-popupContent.innerHTML = `
-  <h3>Register</h3>
-  <form id="popupForm">
-    <input type="text" name="name" placeholder="Full Name" required>
-    <input type="text" name="phone" placeholder="Phone (e.g. +639123456789)" required>
-    <select name="barangay" required>
-      <option value="">Select Barangay</option>
-      <option value="Tugatog">Tugatog</option>
-      <option value="Acacia">Acacia</option>
-      <option value="Tinajeros">Tinajeros</option>
-    </select>
-    <button type="submit">Register</button>
-    <div class="msg" id="popupMsg"></div>
-  </form>
-`;
-
 // Handle form submission
-popupContent.querySelector('#popupForm').addEventListener('submit', async (e) => {
-  e.preventDefault();
-  const formData = new FormData(e.target);
-  const data = Object.fromEntries(formData.entries());
-  const msgBox = popupContent.querySelector('#popupMsg');
+const form = document.getElementById('popupForm');
+const msgBox = document.getElementById('popupMsg');
 
-  // show a loading message while waiting
-  msgBox.textContent = "⏳ Registering...";
-  msgBox.style.color = "blue";
+if (form) {
+  form.addEventListener('submit', async (e) => {
+    e.preventDefault();
+    const formData = new FormData(e.target);
+    const data = Object.fromEntries(formData.entries());
+    msgBox.textContent = ''; // Clear previous message
 
-  try {
-    const res = await fetch("https://trashtracktify.onrender.com/register.html", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify(data)
-    });
-    
-    // Try parsing JSON; fallback to plain text if needed
-    let resultText = "";
     try {
-      const result = await res.json();
-      resultText = result.message || JSON.stringify(result);
-    } catch {
-      resultText = await res.text();
+      const res = await fetch('/register', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(data)
+      });
+
+      const text = await res.text();
+      msgBox.textContent = text;
+      msgBox.style.color = res.ok ? 'green' : 'red';
+
+      if (res.ok) {
+        e.target.reset();
+        // Optionally close the popup after success
+        setTimeout(() => {
+          document.getElementById('registerPopup').classList.remove('show');
+        }, 2000);
+      }
+    } catch (err) {
+      msgBox.textContent = 'Error connecting to server: ' + err.message;
+      msgBox.style.color = 'red';
     }
-
-    if (res.ok) {
-      msgBox.textContent = `✅ Registration successful! ${resultText}`;
-      msgBox.style.color = "green";
-      e.target.reset();
-    } else {
-      msgBox.textContent = `❌ Registration failed: ${resultText}`;
-      msgBox.style.color = "red";
-    }
-
-    // auto-hide after 5 seconds
-    setTimeout(() => (msgBox.textContent = ""), 5000);
-
-  } catch (err) {
-    msgBox.textContent = "⚠️ Error: Cannot connect to server.";
-    msgBox.style.color = "red";
-  }
-});
+  });
+}
