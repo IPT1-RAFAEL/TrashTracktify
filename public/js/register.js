@@ -325,45 +325,47 @@ popupContent.innerHTML = `
   </form>
 `;
 
-// Handle form submission with clear feedback
+// Handle form submission
 popupContent.querySelector('#popupForm').addEventListener('submit', async (e) => {
   e.preventDefault();
-
   const formData = new FormData(e.target);
   const data = Object.fromEntries(formData.entries());
   const msgBox = popupContent.querySelector('#popupMsg');
 
-  // Show loading message
+  // show a loading message while waiting
   msgBox.textContent = "⏳ Registering...";
   msgBox.style.color = "blue";
 
   try {
-    const res = await fetch("/register", {
+    const res = await fetch("https://trashtracktify.onrender.com/register.html", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify(data),
+      body: JSON.stringify(data)
     });
-
-    const responseText = await res.text();
+    
+    // Try parsing JSON; fallback to plain text if needed
+    let resultText = "";
+    try {
+      const result = await res.json();
+      resultText = result.message || JSON.stringify(result);
+    } catch {
+      resultText = await res.text();
+    }
 
     if (res.ok) {
-      msgBox.textContent = "✅ Registration successful!";
+      msgBox.textContent = `✅ Registration successful! ${resultText}`;
       msgBox.style.color = "green";
-
-      // Optional: show popup alert
-      alert("Registration successful! Welcome " + data.name + "!");
       e.target.reset();
     } else {
-      msgBox.textContent = `❌ Registration failed: ${responseText}`;
+      msgBox.textContent = `❌ Registration failed: ${resultText}`;
       msgBox.style.color = "red";
     }
-  } catch (error) {
-    msgBox.textContent = "⚠️ Server connection error. Please try again.";
+
+    // auto-hide after 5 seconds
+    setTimeout(() => (msgBox.textContent = ""), 5000);
+
+  } catch (err) {
+    msgBox.textContent = "⚠️ Error: Cannot connect to server.";
     msgBox.style.color = "red";
   }
-
-  // Hide the message after 4 seconds (optional)
-  setTimeout(() => {
-    msgBox.textContent = "";
-  }, 4000);
 });
