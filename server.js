@@ -290,19 +290,20 @@ function getDistance(lat1, lon1, lat2, lon2) {
   return R * c;
 }
 
-// 📝 Registration form handler (with improved error handling)
-app.post('/register', (req, res) => {
-  const { name, phone, barangay } = req.body;
-  if (!name || !phone || !barangay) return res.status(400).send('All fields are required.');
-  db.query('INSERT INTO users (name, phone, barangay) VALUES (?, ?, ?)',
-    [name, phone, barangay], (err) => {
-      if (err) {
-        console.error('❌ Database insert error:', err); // Log the full error for debugging
-        return res.status(500).send('Database insert error: ' + err.message); // Send more detailed error to client
-      }
-      console.log(`✅ New user registered: ${name} (${barangay})`);
-      res.send('Registration successful!');
+// 📤 Send SMS trigger from geofence or street proximity
+app.post('/send-sms', (req, res) => {
+  const { message, barangay } = req.body;
+  if (!message || !barangay)
+    return res.status(400).send('Missing message or barangay.');
+  db.query('SELECT phone FROM users WHERE barangay = ?', [barangay], (err, results) => {
+    if (err) return res.status(500).send('Database error');
+    if (results.length === 0) return res.status(404).send(`No users in ${barangay}.`);
+    results.forEach(user => {
+      const command = `send_sms:${message} (${user.phone})`;
+      mqttClient.publish('truck/sms', command);
     });
+    res.send(`✅ Message sent to ${results.length} users in ${barangay}`);
+  });
 });
 
 // 📝 Registration form handler (unchanged)
