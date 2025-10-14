@@ -15,7 +15,7 @@ const truckIcon = L.icon({
 });
 
 // Draggable marker - start outside geofence
-const marker = L.marker([0, 0], { icon: truckIcon }).addTo(map);
+const marker = L.marker([0, 0], { icon: truckIcon, draggable: true }).addTo(map);
 
 // Define multiple polygons (geofences)
 const polygons = [

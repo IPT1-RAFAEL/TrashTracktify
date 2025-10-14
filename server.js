@@ -30,6 +30,8 @@ db.connect(err => {
   else console.log('✅ Connected to MySQL database.');
 });
 
+
+
 // Middleware
 app.use(express.urlencoded({ extended: true }));
 app.use(express.json());

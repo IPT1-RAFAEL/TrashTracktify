@@ -79,7 +79,7 @@ body {
 /* --- RESPONSIVE DESIGN --- */
 @media (max-width: 1024px) {
   .container {
-    flex-direction: column;
+    flex-direction: column-reverse;
     height: auto;
     border-radius: 0;
     margin: 0;
@@ -91,7 +91,9 @@ body {
   }
 
   .map-container {
-    height: 60vh;
+    order: -1;
+    height: 70vh; 
+    width: 100%;
   }
 
   .schedule h1 {
@@ -109,25 +111,16 @@ body {
 }
 
 @media (max-width: 480px) {
+  .map-container {
+    height: 65vh;
+  }
+
   .schedule {
     padding: 15px;
   }
 
   .schedule h1 {
-    font-size: 1.3rem;
-  }
-
-  .barangay h2 {
-    font-size: 1.1rem;
-  }
-
-  .days span {
-    padding: 5px 8px;
-    font-size: 0.75em;
-  }
-
-  .map-container {
-    height: 50vh;
+    font-size: 1.2rem;
   }
 }
 
