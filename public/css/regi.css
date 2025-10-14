@@ -166,51 +166,101 @@ button#openRegister:hover {
   color: #333;
 }
 
-/* --- RESPONSIVE DESIGN --- */
-@media (max-width: 768px) {
+/* Mobile & Tablet Layout */
+@media (max-width: 1024px) {
+  body {
+    background: #dce9fa;
+    display: flex;
+    justify-content: center;
+    align-items: flex-start;
+  }
+
   .container {
     flex-direction: column;
+    width: 95%;
     height: auto;
-    border-radius: 0;
-    margin: 0;
+    border-radius: 25px;
+    overflow: hidden;
+    background: #fff;
+    margin: 20px auto;
+    box-shadow: 0 4px 10px rgba(0,0,0,0.15);
   }
 
+  /* Map on top */
+  .map-container {
+    order: -1;
+    height: 55vh;
+    width: 100%;
+    border-radius: 25px 25px 0 0;
+    overflow: hidden;
+    background: #c9c3c3;
+  }
+
+  /* Schedule below map */
   .schedule {
     padding: 20px;
-    border-bottom: 1px solid #ccc;
-  }
-
-  .map-container {
-    height: 60vh;
+    border-radius: 0 0 25px 25px;
+    background: #fff;
+    text-align: center;
   }
 
   .schedule h1 {
-    font-size: 1.6rem;
+    font-size: 1.4rem;
+    margin-bottom: 15px;
+  }
+
+  .barangay {
+    margin-bottom: 15px;
   }
 
   .barangay h2 {
-    font-size: 1.3rem;
+    font-family: 'Brush Script MT', cursive;
+    font-size: 1.4rem;
+    margin-bottom: 8px;
+  }
+
+  .days {
+    display: flex;
+    justify-content: center;
+    flex-wrap: wrap;
+    gap: 5px;
   }
 
   .days span {
+    background: #83a69c;
+    color: #fff;
+    border-radius: 5px;
     padding: 6px 10px;
-    font-size: 0.8em;
+    font-size: 0.85em;
   }
 
-  button#openRegister {
+  /* Optional register button at bottom */
+  #openRegister {
     font-size: 1rem;
-    padding: 12px;
+    background: none;
+    border: none;
+    color: #000;
+    font-weight: bold;
+    margin-top: 10px;
+    cursor: pointer;
   }
 
-  .popup-content {
-    width: 95%;
-    padding: 20px;
+  #openRegister:hover {
+    color: #4CAF50;
   }
 }
 
 @media (max-width: 480px) {
+  .map-container {
+    height: 60vh;
+  }
+
+  .schedule {
+    padding: 15px;
+  }
+
   .schedule h1 {
-    font-size: 1.3rem;
+    font-size: 1.2rem;
   }
 
   .barangay h2 {
@@ -218,48 +268,6 @@ button#openRegister:hover {
   }
 
   .days span {
-    padding: 5px 8px;
-    font-size: 0.75em;
-  }
-
-  .map-container {
-    height: 50vh;
-  }
-
-  .popup-content {
-    padding: 15px;
-  }
-
-  .popup-content input,
-  .popup-content select,
-  .popup-content button {
-    padding: 10px;
-    font-size: 0.9rem;
-  }
-
-  .popup-icon {
-    width: 50px;
-  }
-}
-
-@media (min-width: 1025px) {
-  .container {
-    width: 85%;
-  }
-
-  .schedule {
-    flex: 0.8;
-  }
-}
-
-/* Touch optimization */
-@media (pointer: coarse) {
-  .days span {
-    padding: 10px 14px;
-  }
-
-  button#openRegister,
-  .popup-content button {
-    padding: 14px;
+    font-size: 0.8em;
   }
 }
