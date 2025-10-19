@@ -16,6 +16,7 @@ const truckIcon = L.icon({
 
 // Draggable marker - start outside geofence
 const marker = L.marker([0, 0], { icon: truckIcon, draggable: true }).addTo(map);
+marker.bindPopup("Calculating ETA...").openPopup();
 
 // Define multiple polygons (geofences)
 const polygons = [
@@ -297,6 +298,31 @@ if ("geolocation" in navigator) {
       // Emit the location update to the server via Socket.IO
       // This will allow the server to broadcast it to other clients (e.g., register.js)
       socket.emit('update-location', { latitude, longitude });
+      
+      let closestStreet = null;
+      let minDistance = Infinity;
+
+      Object.entries(streetGroups).forEach(([barangay, streets]) => {
+        streets.forEach(item => {
+            const coords = item.coords;
+            if (!coords || coords.length !== 2) return;
+
+            const distance = getDistance(latitude, longitude, coords[0], coords[1]);
+
+            if (distance < minDistance) {
+                minDistance = distance;
+                closestStreet = { ...item, barangay };
+            }
+        });
+      });
+      
+      if (closestStreet) {
+          const speed = 5.5; // m/s (20 km/h)
+          const etaSeconds = minDistance / speed;
+          const etaMinutes = Math.round(etaSeconds / 60);
+          marker.setPopupContent(`<b>Next Stop:</b> ${closestStreet.name}<br><b>ETA:</b> ${etaMinutes} minutes`).openPopup();
+      }
+
 
       // ===============================
       // 🧭 GEOFENCE (Barangay zone logic)
@@ -466,6 +492,9 @@ function sendSMSToStreet(barangay, street) {
 // ===============================
 marker.on('drag', () => {
   const truckPos = marker.getLatLng();
+
+  // **NEW:** Emit location update on drag
+  socket.emit('update-location', { latitude: truckPos.lat, longitude: truckPos.lng });
 
   // For each barangay and its street list
   Object.entries(streetGroups).forEach(([barangay, streets]) => {

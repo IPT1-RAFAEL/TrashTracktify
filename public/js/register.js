@@ -23,9 +23,34 @@ socket.on("location-update", (data) => {
   // Create marker on first update if it doesn't exist
   if (!marker) {
     marker = L.marker(newLatLng, { icon: truckIcon }).addTo(map);
+    marker.bindPopup("Calculating ETA...").openPopup();
   } else {
     // Update existing marker position
     marker.setLatLng(newLatLng);
+  }
+  
+  let closestStreet = null;
+  let minDistance = Infinity;
+
+  Object.entries(streetGroups).forEach(([barangay, streets]) => {
+      streets.forEach(item => {
+          const coords = item.coords;
+          if (!coords || coords.length !== 2) return;
+
+          const distance = getDistance(latitude, longitude, coords[0], coords[1]);
+
+          if (distance < minDistance) {
+              minDistance = distance;
+              closestStreet = { ...item, barangay };
+          }
+      });
+  });
+
+  if (closestStreet) {
+      const speed = 5.5; // m/s (20 km/h)
+      const etaSeconds = minDistance / speed;
+      const etaMinutes = Math.round(etaSeconds / 60);
+      marker.setPopupContent(`<b>Next Stop:</b> ${closestStreet.name}<br><b>ETA:</b> ${etaMinutes} minutes`).openPopup();
   }
 
   map.setView(newLatLng, map.getZoom());
@@ -305,6 +330,19 @@ Object.entries(streetGroups).forEach(([barangay, streets]) => {
       .bindPopup(`<b>${item.name}</b><br>${barangay}`);
   });
 });
+
+function getDistance(lat1, lon1, lat2, lon2) {
+  const R = 6371000; // meters
+  const toRad = x => x * Math.PI / 180;
+  const dLat = toRad(lat2 - lat1);
+  const dLon = toRad(lon2 - lon1);
+  const a =
+    Math.sin(dLat / 2) * Math.sin(dLat / 2) +
+    Math.cos(toRad(lat1)) * Math.cos(toRad(lat2)) *
+    Math.sin(dLon / 2) * Math.sin(dLon / 2);
+  const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
+  return R * c;
+}
 
 // Handle form submission
 const form = document.getElementById('popupForm');

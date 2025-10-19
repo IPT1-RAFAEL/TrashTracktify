@@ -1,6 +1,6 @@
 require('dotenv').config();
 const express = require('express');
-const path = require('path');
+const path = path('path');
 const mysql = require('mysql2');
 const http = require('http');
 const { Server } = require('socket.io');
@@ -330,6 +330,11 @@ io.on('connection', (socket) => {
   socket.on('update-location', (data) => {
     const { latitude, longitude } = data;
     console.log('📍 GPS Update:', data);
+
+    // **NEW:** Insert location data into the history table
+    db.query('INSERT INTO location_history (latitude, longitude) VALUES (?, ?)', [latitude, longitude], (err) => {
+      if (err) console.error('❌ Error saving location to database:', err);
+    });
 
     // Determine current zone
     const point = turf.point([longitude, latitude]);
