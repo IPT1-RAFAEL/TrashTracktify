@@ -1,7 +1,10 @@
 // This file is for viewing truck locations and ETAs only.
 // It fetches geographic data and ETA from the server.
 
-const socket = io("https://trashtracktify.onrender.com"); // Your server URL
+// *** FIX: Removed typo. Connect to local server for testing ***
+// const socket = io("https://trashtracktify.onrender.com");
+const socket = io("http://localhost:3000"); // Use this when running locally
+
 const map = L.map('map').setView([14.667, 120.967], 15);
 
 L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
@@ -9,7 +12,7 @@ L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
 }).addTo(map);
 
 const truckIcon = L.icon({
-  iconUrl: "truck.png", // Ensure truck.png exists in public/
+  iconUrl: "truck.png",
   iconSize: [32, 32],
   iconAnchor: [16, 32],
   popupAnchor: [0, -32],
@@ -21,7 +24,7 @@ let truckMarkers = {};
 // --- Variables to hold fetched data ---
 let polygons = [];
 let streetGroups = {};
-const markerColors = { Tugatog: "green", Acacia: "blue", Tinajeros: "red" }; // Keep this simple map
+const markerColors = { Tugatog: "green", Acacia: "blue", Tinajeros: "red" };
 
 // --- Function to draw polygons once data is loaded ---
 function drawPolygons() {
@@ -52,7 +55,7 @@ function drawStreetMarkers() {
 async function loadAndDrawMapData() {
     console.log("Loading map data...");
     try {
-        const polyResponse = await fetch('/data/polygon.json'); // Corrected filename
+        const polyResponse = await fetch('/data/polygon.json');
         if (!polyResponse.ok) throw new Error(`HTTP error! status: ${polyResponse.status}`);
         polygons = await polyResponse.json();
         console.log("Polygons loaded:", polygons.length);
@@ -62,7 +65,6 @@ async function loadAndDrawMapData() {
         streetGroups = await streetResponse.json();
         console.log("Street groups loaded:", Object.keys(streetGroups).length);
 
-        // Now that data is loaded, draw them
         drawPolygons();
         drawStreetMarkers();
 
@@ -71,15 +73,12 @@ async function loadAndDrawMapData() {
     }
 }
 
-// --- Function to Calculate Distance (Can be removed if not used elsewhere) ---
-// function getDistance(lat1, lon1, lat2, lon2) { /* ... same as server ... */ }
-
 // --- Load map data after map is ready ---
 loadAndDrawMapData();
 
 // --- Socket.IO Listener ---
 socket.on("location-update", (data) => {
-  const { latitude, longitude, truckId, source } = data; // Expect truckId
+  const { latitude, longitude, truckId, source } = data;
    if (latitude === undefined || longitude === undefined || !truckId) {
       console.warn("Received incomplete location update:", data);
       return;
@@ -89,21 +88,21 @@ socket.on("location-update", (data) => {
   let currentMarker = truckMarkers[truckId];
 
   if (!currentMarker) {
-    // Create marker if it doesn't exist
     console.log(`Creating marker for new truck: ${truckId}`);
     currentMarker = L.marker(newLatLng, { icon: truckIcon }).addTo(map); // Non-draggable
     currentMarker.bindPopup(`<b>${truckId}</b><br>Calculating ETA...`).openPopup();
     truckMarkers[truckId] = currentMarker;
   } else {
-    // Update existing marker position
     currentMarker.setLatLng(newLatLng);
   }
 
   // --- Fetch and Display ETA ---
-  fetch(`/eta/${truckId}`) // Call the server's ETA endpoint
+  // *** FIX: Use a relative URL for fetch ***
+  fetch(`/eta/${truckId}`)
      .then(response => {
         if (!response.ok) {
-             throw new Error(`HTTP error fetching ETA! status: ${response.status}`);
+            console.error(`Error fetching ETA: ${response.status} (${response.statusText})`);
+            throw new Error(`HTTP error! status: ${response.status}`);
         }
         return response.json();
      })
@@ -114,12 +113,9 @@ socket.on("location-update", (data) => {
             etaText = `ETA: ${etaData.etaMinutes} minute${etaData.etaMinutes !== 1 ? 's' : ''}`;
          } else if (etaData.error) {
              etaText = "ETA Error";
-             console.warn(`ETA Error for ${truckId}: ${etaData.error}`);
          }
          currentMarker.setPopupContent(`<b>${truckId}</b><br>Next: ${etaData.nextStop || 'N/A'}<br>${etaText}`);
-         if(!currentMarker.isPopupOpen()) {
-             currentMarker.openPopup();
-         }
+         if(!currentMarker.isPopupOpen()) currentMarker.openPopup();
       } else {
          currentMarker.setPopupContent(`<b>${truckId}</b><br>ETA data unavailable`);
       }
@@ -142,7 +138,7 @@ socket.on("location-update", (data) => {
 });
 
 
-// --- Handle Registration Form Submission --- (Keep this section)
+// --- Handle Registration Form Submission ---
 const form = document.getElementById('popupForm');
 const msgBox = document.getElementById('popupMsg');
 
@@ -151,10 +147,11 @@ if (form) {
     e.preventDefault();
     const formData = new FormData(e.target);
     const data = Object.fromEntries(formData.entries());
-    msgBox.textContent = ''; // Clear previous message
+    msgBox.textContent = '';
 
     try {
-      const res = await fetch('/register', {
+      // *** FIX: Use a relative URL for fetch ***
+      const res = await fetch('/register', { 
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(data)

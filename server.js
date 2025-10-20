@@ -1,11 +1,12 @@
 require('dotenv').config();
 const express = require('express');
 const path = require('path');
-const mysql = require('mysql2/promise'); // Using promise wrapper
+const mysql = require('mysql2/promise');
 const http = require('http');
 const { Server } = require('socket.io');
 const turf = require('@turf/turf');
 const fs = require('fs');
+const cors = require('cors'); // <<< 1. REQUIRE CORS
 
 const app = express();
 const port = process.env.PORT || 3000;
@@ -33,6 +34,7 @@ dbPool.getConnection()
   });
 
 // --- Middleware ---
+app.use(cors()); // <<< 2. USE CORS (This allows requests from other origins)
 app.use(express.urlencoded({ extended: true }));
 app.use(express.json());
 app.use(express.static(path.join(__dirname, 'public')));
@@ -45,7 +47,7 @@ let allStreetMarkers = []; // Flattened list for easier lookup by name
 
 try {
     console.log("Loading geographic data from JSON files...");
-    let rawPolyData = fs.readFileSync(path.join(__dirname, 'public/data/polygon.json')); // Corrected filename
+    let rawPolyData = fs.readFileSync(path.join(__dirname, 'public/data/polygon.json'));
     polygons = JSON.parse(rawPolyData);
     console.log(`✅ Loaded ${polygons.length} polygons.`);
 
@@ -53,12 +55,34 @@ try {
     streetGroups = JSON.parse(rawStreetData);
     console.log(`✅ Loaded street groups for ${Object.keys(streetGroups).length} barangays.`);
 
-    // Create Turf Polygons & Flatten Street Markers
-    turfPolygons = polygons.map(p => { /* ... see previous code ... */ }).filter(tp => tp.turf !== null);
-     Object.entries(streetGroups).forEach(([barangay, streets]) => {
+    // Create Turf Polygons
+    turfPolygons = polygons.map(p => {
+        if (!Array.isArray(p.coords) || p.coords.length < 3 || !Array.isArray(p.coords[0]) || p.coords[0].length < 2) {
+            console.error(`❌ Invalid or empty coords for polygon: ${p.name}`);
+            return { name: p.name, turf: null }; // Return object with null turf
+        }
+        const ring = p.coords.map(c => [c[1], c[0]]);
+        const first = ring[0];
+        const last = ring[ring.length - 1];
+        if (first[0] !== last[0] || first[1] !== last[1]) {
+            ring.push([...first]);
+        }
+        try {
+            return { name: p.name, turf: turf.polygon([ring]) };
+        } catch(turfError) {
+             console.error(`❌ Error creating Turf polygon for ${p.name}:`, turfError.message);
+             return { name: p.name, turf: null }; // Return object
+        }
+    }).filter(tp => {
+        // Filter out any undefined or null turf objects
+        return tp && tp.turf !== null;
+    });
+
+    // Flatten Street Markers
+    Object.entries(streetGroups).forEach(([barangay, streets]) => {
         streets.forEach(street => {
             if (street.coords && street.coords.length === 2) {
-                allStreetMarkers.push({ ...street, barangay }); // Add barangay info
+                allStreetMarkers.push({ ...street, barangay });
             }
         });
     });
@@ -70,11 +94,18 @@ try {
     process.exit(1);
 }
 
-const streetProximity = 15; // Increased proximity slightly for marker identification
-const markerVisitThresholdSeconds = 60 * 2; // Time window (seconds) to consider being "at" a marker
+const streetProximity = 15;
 
 // --- Helper Functions ---
-function getDistance(lat1, lon1, lat2, lon2) { /* ... same as before ... */ }
+function getDistance(lat1, lon1, lat2, lon2) {
+  const R = 6371000;
+  const toRad = x => x * Math.PI / 180;
+  const dLat = toRad(lat2 - lat1);
+  const dLon = toRad(lon2 - lon1);
+  const a = Math.sin(dLat / 2) * Math.sin(dLat / 2) + Math.cos(toRad(lat1)) * Math.cos(toRad(lat2)) * Math.sin(dLon / 2) * Math.sin(dLon / 2);
+  const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
+  return R * c;
+}
 
 function findNearestStreet(latitude, longitude) {
      let closestStreet = null;
@@ -91,27 +122,46 @@ function findNearestStreet(latitude, longitude) {
 
 // --- API Routes ---
 
-// Registration form handler
-app.post('/register', async (req, res) => { /* ... same as before ... */ });
+// Registration
+app.post('/register', async (req, res) => {
+  const { name, phone, barangay } = req.body;
+  if (!name || !phone || !barangay) {
+    return res.status(400).send('All fields are required.');
+  }
+  try {
+    const connection = await dbPool.getConnection();
+    await connection.query('INSERT INTO users (name, phone, barangay) VALUES (?, ?, ?)', [name, phone, barangay]);
+    connection.release();
+    console.log(`✅ New user registered: ${name} (${barangay})`);
+    res.send('Registration successful!');
+  } catch (err) {
+    console.error('Database insert error:', err);
+    res.status(500).send('Database insert error');
+  }
+});
 
-// Reset History Endpoint
-app.post('/reset-history', async (req, res) => { /* ... same as before ... */ });
+// Reset History
+app.post('/reset-history', async (req, res) => {
+  try {
+    const connection = await dbPool.getConnection();
+    await connection.query('TRUNCATE TABLE location_history');
+    connection.release();
+    console.log('✅ Location history cleared.');
+    res.send('✅ Location history has been successfully cleared.');
+  } catch (err) {
+    console.error('❌ Error clearing location history:', err);
+    res.status(500).send('Failed to clear location history.');
+  }
+});
 
-// --- ETA Calculation Endpoint ---
+// ETA Calculation
 app.get('/eta/:truckId', async (req, res) => {
   const { truckId } = req.params;
   let connection;
-
   try {
     connection = await dbPool.getConnection();
-
-    // 1. Get current state (last ~5-10 points for direction/current segment)
     const [history] = await connection.query(
-      `SELECT latitude, longitude, driver_id, trip_id, timestamp
-       FROM location_history
-       WHERE truck_id = ?
-       ORDER BY timestamp DESC
-       LIMIT 10`, // Get a few recent points
+      `SELECT latitude, longitude FROM location_history WHERE truck_id = ? ORDER BY timestamp DESC LIMIT 1`,
       [truckId]
     );
 
@@ -119,114 +169,60 @@ app.get('/eta/:truckId', async (req, res) => {
       return res.status(404).json({ etaMinutes: -1, nextStop: "Unknown", error: "Truck location not found" });
     }
 
-    const currentLoc = history[0]; // Most recent point
+    const currentLoc = history[0];
     const currentLat = parseFloat(currentLoc.latitude);
     const currentLon = parseFloat(currentLoc.longitude);
-    const currentTripId = currentLoc.trip_id;
-    const currentDriverId = currentLoc.driver_id; // Needed for driver-specific history
-
-    // --- Advanced Logic Area ---
-
-    // 2. Identify the *last visited marker* on the current trip
-    //    Requires querying history for the current tripId, finding points close to markers
-    let lastVisitedMarker = null;
-    // (Conceptual Query: Find latest point in current trip within `streetProximity` of any marker)
-    // You'd likely iterate backwards through `history` or do a more complex DB query.
-    // For simplicity, let's find the nearest marker overall as a proxy (not accurate for actual path)
+    
     const nearestMarkerToCurrent = findNearestStreet(currentLat, currentLon);
-    // !!! This simplistic approach doesn't know the *previous distinct marker visited on this trip* !!!
-
-
-    // 3. Predict the *next marker* based on historical routes
-    //    - Analyze past `trip_id`s for this `driver_id` or `truck_id`.
-    //    - Find common sequences of visited markers.
-    //    - Based on the (properly identified) `lastVisitedMarker`, predict the next one.
-    //    - Placeholder: Use the overall nearest marker again (very inaccurate prediction)
     const predictedNextMarkerName = nearestMarkerToCurrent ? nearestMarkerToCurrent.name : "Unknown";
-    const lastMarkerName = "PLACEHOLDER_LAST_MARKER"; // Needs proper identification
-
-    // 4. Query Historical Average Time for the segment (Last Marker -> Next Marker)
-    let averageSeconds = -1;
-    if (predictedNextMarkerName !== "Unknown" && lastMarkerName !== "PLACEHOLDER_LAST_MARKER") {
-        console.log(`Querying history for ${truckId}/${currentDriverId}: ${lastMarkerName} -> ${predictedNextMarkerName}`);
-        // Conceptual Query:
-        // Needs refinement - GROUP BY trip_id, find pairs of marker visits within trips, average the time diff.
-        // Consider time of day, day of week filters here.
-       /*
-       const [avgResult] = await connection.query(
-           `SELECT AVG(TIMESTAMPDIFF(SECOND, t1.timestamp, MIN(t2.timestamp))) as avg_duration
-            FROM location_history t1
-            JOIN location_history t2 ON t1.trip_id = t2.trip_id AND t2.timestamp > t1.timestamp
-            WHERE t1.truck_id = ? AND t1.driver_id = ?
-              AND t1.marker_name = ? -- Requires identifying points near markers
-              AND t2.marker_name = ?
-              AND t1.timestamp > DATE_SUB(NOW(), INTERVAL 7 DAY) -- Look at recent history
-            GROUP BY t1.trip_id
-            HAVING MIN(t2.timestamp) IS NOT NULL;`, // Ensure a next marker was found in the trip
-           [truckId, currentDriverId, lastMarkerName, predictedNextMarkerName]
-       );
-       if (avgResult.length > 0 && avgResult[0].avg_duration) {
-           averageSeconds = parseFloat(avgResult[0].avg_duration);
-           console.log(`Historical average found: ${averageSeconds.toFixed(1)}s`);
-       } else {
-           console.log("No specific historical average found for this segment.");
-       }
-       */
-       // USING SIMULATED VALUE FOR NOW
-       if (predictedNextMarkerName === "Caridad St") averageSeconds = 180;
-       else if (predictedNextMarkerName === "Inocensia St") averageSeconds = 120;
-
-    }
-
-    // --- End Advanced Logic Area ---
-
+    let averageSeconds = -1; 
+    
+    // (Add real historical query logic here later)
+    
     let etaMinutes = -1;
     if (averageSeconds > 0) {
       etaMinutes = Math.round(averageSeconds / 60);
-      console.log(`ETA for ${truckId} to ${predictedNextMarkerName}: Using historical (${etaMinutes} min)`);
-    } else if (nearestMarkerToCurrent && nearestMarkerToCurrent.distance > streetProximity) { // Only use fallback if not *at* the marker
-       // Fallback: Simple distance/speed to the NEAREST marker (less accurate)
+    } else if (nearestMarkerToCurrent && nearestMarkerToCurrent.distance > streetProximity) { 
        const fallbackSpeed = 5.5; // m/s
        etaMinutes = Math.round((nearestMarkerToCurrent.distance / fallbackSpeed) / 60);
-       console.log(`ETA for ${truckId} to ${predictedNextMarkerName}: Using fallback (${etaMinutes} min)`);
     } else if (nearestMarkerToCurrent && nearestMarkerToCurrent.distance <= streetProximity) {
-        etaMinutes = 0; // Already at or very near the closest marker
-        console.log(`ETA for ${truckId}: At or near ${predictedNextMarkerName}`);
-    } else {
-        console.log(`ETA for ${truckId}: Could not determine ETA.`);
+        etaMinutes = 0;
     }
 
     res.json({ etaMinutes: etaMinutes, nextStop: predictedNextMarkerName });
 
   } catch (error) {
     console.error(`Error calculating ETA for ${truckId}:`, error);
-    res.status(500).json({ etaMinutes: -1, nextStop: "Error", error: "Server error calculating ETA" });
+    res.status(500).json({ etaMinutes: -1, nextStop: "Error", error: "Server error" });
   } finally {
       if (connection) connection.release();
   }
 });
 
-
 // --- HTTP Server & Socket.IO Setup ---
 const server = http.createServer(app);
-const io = new Server(server, { cors: { origin: "*" } });
+const io = new Server(server, {
+  cors: {
+    origin: "*", // Allow all origins for Socket.IO
+    methods: ["GET", "POST"]
+  }
+});
 
-// --- Store connected truck sockets ---
-let truckSockets = {}; // Map: { truckId: socket }
+let truckSockets = {};
 
 // --- Socket.IO Connection Logic ---
 io.on('connection', (socket) => {
-    // ... (Connection/Disconnect logic same as previous version) ...
     console.log(`🟢 Client connected: ${socket.id}`);
     let connectedTruckId = null;
 
     socket.on('update-location', async (data) => {
-        // ... (Validation, Database Logging, Broadcasting - same as previous version, ensures driverId/tripId are saved) ...
-        if (typeof data !== 'object' || data.latitude === undefined || data.longitude === undefined || !data.truckId) { /* ... */ return; }
+        if (typeof data !== 'object' || data.latitude === undefined || !data.truckId) { 
+            console.warn(`⚠️ Invalid location data from ${socket.id}`);
+            return; 
+        }
         const { latitude, longitude, truckId, driverId, tripId, source } = data;
-        // console.log(`📍 Loc Update [${truckId} via ${source || 'browser'}]: ${latitude}, ${longitude}`); // Less verbose
 
-        if (source === 'device') {
+        if (source === 'device' || source === 'simulator') {
             connectedTruckId = truckId;
             truckSockets[truckId] = socket;
         }
@@ -240,10 +236,13 @@ io.on('connection', (socket) => {
               [latitude, longitude, truckId, driverId || null, tripId || null]
             );
             dbConn.release();
-        } catch (err) { /* ... error handling ... */ }
+        } catch (err) { 
+            if (dbConn) dbConn.release();
+            console.error('❌ Error saving location to database:', err);
+        }
 
-        // Geofence & Proximity Checks for SMS (only for device source)
-        if (source === 'device' && turfPolygons.length > 0 && allStreetMarkers.length > 0) {
+        // Geofence & Proximity Checks
+        if ((source === 'device' || source === 'simulator') && turfPolygons.length > 0) {
             const point = turf.point([longitude, latitude]);
             let currentZone = null;
             for (const zone of turfPolygons) {
@@ -252,10 +251,10 @@ io.on('connection', (socket) => {
 
             const nearestStreet = findNearestStreet(latitude, longitude);
 
-            // Trigger SMS based on state change
+            // Trigger SMS
             if (currentZone && currentZone !== socket.lastZone) {
               console.log(`🚚 Truck ${truckId} entered zone: ${currentZone}`);
-              socket.lastZone = currentZone; socket.lastNearStreet = null; // Reset street when changing zone
+              socket.lastZone = currentZone; socket.lastNearStreet = null;
               triggerSmsSend(currentZone, null, truckId);
             } else if (!currentZone && socket.lastZone) {
                  console.log(`🚚 Truck ${truckId} exited zone: ${socket.lastZone}`);
@@ -272,12 +271,10 @@ io.on('connection', (socket) => {
             }
         }
 
-        // Broadcast to all clients
         io.emit('location-update', data);
     });
 
     socket.on('disconnect', () => {
-       // ... (same disconnect logic) ...
         console.log(`🔴 Client disconnected: ${socket.id}`);
         if (connectedTruckId && truckSockets[connectedTruckId] === socket) {
           console.log(`🚛 Truck ${connectedTruckId} disconnected.`);
@@ -288,7 +285,6 @@ io.on('connection', (socket) => {
 
 // --- Function to Trigger SMS Sending ---
 async function triggerSmsSend(barangay, street, triggeringTruckId) {
-    // ... (no changes needed here from previous version) ...
      const alertMessage = street ? `Truck near ${street}, ${barangay}` : `Truck entered ${barangay}`;
     let connection;
     try {
@@ -296,16 +292,24 @@ async function triggerSmsSend(barangay, street, triggeringTruckId) {
         const [users] = await connection.query('SELECT phone FROM users WHERE barangay = ?', [barangay]);
         connection.release();
 
-        if (users.length === 0) { /* ... no users log ... */ return; }
+        if (users.length === 0) { 
+            console.log(`ℹ️ No registered users in ${barangay} for SMS alert.`);
+            return; 
+        }
 
-        users.forEach(user => {
-            const truckSocket = truckSockets[triggeringTruckId];
-            if (truckSocket) {
+        const truckSocket = truckSockets[triggeringTruckId];
+        if (truckSocket) {
+             users.forEach(user => {
                 truckSocket.emit('send_sms_command', { phone: user.phone, message: alertMessage });
                 console.log(`📱 Queued SMS via Socket.IO to Truck ${triggeringTruckId} for ${user.phone}`);
-            } else { /* ... warning log ... */ }
-        });
-    } catch (err) { /* ... error handling ... */ }
+            });
+        } else { 
+            console.warn(`⚠️ Truck ${triggeringTruckId} not connected via Socket.IO, cannot send SMS command.`);
+        }
+    } catch (err) { 
+        if (connection) connection.release();
+        console.error(`❌ Error querying users or sending SMS command for ${barangay}:`, err);
+    }
 }
 
 // --- Start Server ---
