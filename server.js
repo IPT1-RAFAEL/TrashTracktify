@@ -6,8 +6,8 @@ const fs = require('fs').promises;
 const path = require('path');
 const http = require('http');
 const { Server } = require('socket.io');
-const net = require('net');
 const cors = require('cors');
+const mqtt = require('mqtt');
 
 const app = express();
 const server = http.createServer(app);
@@ -15,9 +15,24 @@ const io = new Server(server, {
   cors: { origin: "*", methods: ["GET", "POST"] }
 });
 const port = process.env.PORT || 3000;
-const TCP_HOST = process.env.TCP_HOST || '192.168.254.141';
-const TCP_PORT = process.env.TCP_PORT || 8888;
-const SMS_BASE_URL = process.env.SMS_BASE_URL || 'http://localhost:3000';
+
+const MQTT_BROKER_URL = 'mqtt://broker.hivemq.com';
+const MQTT_TOPIC = 'trashtracktify/sms/send';
+
+console.log(`[MQTT] Connecting to broker at ${MQTT_BROKER_URL}...`);
+const mqttClient = mqtt.connect(MQTT_BROKER_URL);
+
+mqttClient.on('connect', () => {
+  console.log('✅ [MQTT] Connected to broker');
+});
+
+mqttClient.on('error', (err) => {
+  console.error(`[MQTT] Connection error: ${err.message}`);
+});
+
+mqttClient.on('close', () => {
+  console.log('[MQTT] Disconnected from broker');
+});
 
 app.use(cors());
 app.use(express.urlencoded({ extended: true }));
@@ -117,7 +132,7 @@ app.post('/register', async (req, res) => {
   }
   try {
     const conn = await dbPool.getConnection();
-    await conn.query('INSERT INTO users (name, phone, barangay) VALUES (?, ?, ?)', 
+    await conn.query('INSERT INTO users (name, phone, barangay) VALUES (?, ?, ?)',
       [name, phone, barangay]);
     conn.release();
     console.log(`[DB] Registered user: ${name}, ${phone}, ${barangay}`);
@@ -274,72 +289,9 @@ app.get('/eta/:truckId', async (req, res) => {
   }
 });
 
-let arduinoClient = null;
-let connectionAttempts = 0;
-const MAX_ATTEMPTS = 5;
-const RETRY_DELAY = 10000;
-const smsQueue = [];
-
-function connectToArduino() {
-  if (arduinoClient && !arduinoClient.destroyed && !arduinoClient.connecting) {
-    console.log('[TCP] Already connected to Arduino');
-    return;
-  }
-  if (connectionAttempts >= MAX_ATTEMPTS) {
-    console.error('[TCP] Max connection attempts reached');
-    return;
-  }
-  console.log(`[TCP] Attempt ${connectionAttempts + 1}/${MAX_ATTEMPTS} to connect to Arduino at ${TCP_HOST}:${TCP_PORT}...`);
-  connectionAttempts++;
-  arduinoClient = new net.Socket();
-  arduinoClient.connecting = true;
-  arduinoClient.setTimeout(5000, () => {
-    if (arduinoClient.connecting) {
-      console.error('[TCP] Connection attempt timed out');
-      arduinoClient.destroy();
-    }
-  });
-  arduinoClient.connect(TCP_PORT, TCP_HOST, () => {
-    console.log(`✅ [TCP] Connected to Arduino (${TCP_HOST}:${TCP_PORT})`);
-    arduinoClient.connecting = false;
-    connectionAttempts = 0;
-    arduinoClient.setTimeout(0);
-    while (smsQueue.length > 0) {
-      const { command, callback } = smsQueue.shift();
-      try {
-        arduinoClient.write(command);
-        console.log(`[TCP] Sending queued command: ${command.trim()}`);
-        callback(null, `✅ Queued command sent: ${command.trim()}`);
-      } catch (err) {
-        console.error(`[TCP] Error sending queued command: ${err.message}`);
-        callback(err);
-      }
-    }
-  });
-  arduinoClient.on('data', (data) => {
-    const response = data.toString().trim();
-    console.log(`[TCP] Received from Arduino: ${response}`);
-  });
-  arduinoClient.on('close', (hadError) => {
-    console.log(`[TCP] Connection closed ${hadError ? 'due to error' : 'normally'}`);
-    arduinoClient.connecting = false;
-    arduinoClient = null;
-    setTimeout(connectToArduino, RETRY_DELAY);
-  });
-  arduinoClient.on('error', (err) => {
-    console.error(`[TCP] Error: ${err.message}`);
-    arduinoClient.connecting = false;
-    if (arduinoClient && !arduinoClient.destroyed) {
-      arduinoClient.destroy();
-    }
-    arduinoClient = null;
-  });
-}
-
-connectToArduino();
-
 io.on('connection', (socket) => {
   console.log(`🟢 Client connected: ${socket.id}`);
+
   socket.on('update-location', (data) => {
     const { latitude, longitude, truckId, source } = data;
     if (!latitude || !longitude || !truckId) {
@@ -351,6 +303,7 @@ io.on('connection', (socket) => {
     console.log(`[Socket.IO] Stored location for ${truckId}: Lat=${latitude}, Lon=${longitude}, Source=${source || 'unknown'}`);
     socket.broadcast.emit('location-update', data);
   });
+
   socket.on('simulator-moved-trigger-sms', async (data) => {
     console.log(`[Socket.IO] Received simulator-moved-trigger-sms: ${JSON.stringify(data)}`);
     const { barangay, truckId, latitude, longitude } = data;
@@ -392,7 +345,7 @@ io.on('connection', (socket) => {
           }
         }
       }
-      console.log(`[Socket.IO] Closest street in ${barangay}: ${closestStreet}, Distance: ${minDistance}`);
+
       const conn = await dbPool.getConnection();
       const [users] = await conn.query('SELECT phone FROM users WHERE barangay = ?', [barangay]);
       conn.release();
@@ -411,37 +364,27 @@ io.on('connection', (socket) => {
         return;
       }
       console.log(`[Socket.IO] Sending SMS to ${phoneNumbers.length} valid users in ${barangay}: ${phoneNumbers.join(', ')}`);
+
       const message = `Truck is in Brgy ${barangay}, Street: ${closestStreet}`;
-      const command = `batch_sms:${message} (${phoneNumbers.join(',')})\n`;
-      if (!arduinoClient || arduinoClient.destroyed) {
-        console.warn('[TCP] Arduino not connected, queuing SMS');
-        smsQueue.push({
-          command,
-          callback: (err) => {
-            if (err) console.error(`[Socket.IO] Error queuing SMS: ${err.message}`);
-            else console.log(`[Socket.IO] Queued SMS: ${command.trim()}`);
+      const payload = `batch_sms:${message} (${phoneNumbers.join(',')})`;
+
+      if (mqttClient.connected) {
+        mqttClient.publish(MQTT_TOPIC, payload, (err) => {
+          if (err) {
+            console.error('[MQTT] Failed to publish SMS command:', err);
+          } else {
+            console.log(`[MQTT] Published to ${MQTT_TOPIC}: ${payload.substring(0, 50)}...`);
           }
         });
-        if (!arduinoClient?.connecting) connectToArduino();
-        return;
+      } else {
+        console.warn('[MQTT] Client not connected, SMS command dropped.');
       }
-      try {
-        arduinoClient.write(command);
-        console.log(`[TCP] Sending batch command to Arduino: ${command.trim()}`);
-      } catch (err) {
-        console.error(`[Socket.IO] Error sending SMS: ${err.message}`);
-        smsQueue.push({
-          command,
-          callback: (err) => {
-            if (err) console.error(`[Socket.IO] Error queuing SMS: ${err.message}`);
-            else console.log(`[Socket.IO] Queued SMS: ${command.trim()}`);
-          }
-        });
-      }
+
     } catch (err) {
       console.error(`[Socket.IO] Error processing SMS for ${barangay}: ${err.message}`);
     }
   });
+
   socket.on('schedule-update', () => {
     console.log('[Socket.IO] Broadcasting schedule-update');
     socket.broadcast.emit('schedule-update');
