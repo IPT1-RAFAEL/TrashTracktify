@@ -1,183 +1,160 @@
 require('dotenv').config();
 const express = require('express');
-const path = require('path');
 const mysql = require('mysql2/promise');
+const bcrypt = require('bcrypt');
+const fs = require('fs').promises;
+const path = require('path');
 const http = require('http');
 const { Server } = require('socket.io');
-const turf = require('@turf/turf');
-const fs = require('fs');
-const cors = require('cors');
-const bcrypt = require('bcrypt');
 const net = require('net');
+const cors = require('cors');
 
 const app = express();
-const port = process.env.PORT || 3000;
-
-const ARDUINO_IP = "172.20.10.14";
-const ARDUINO_PORT = 8888;
-
-const dbPool = mysql.createPool({
-  connectionLimit: 10,
-  host: process.env.DB_HOST,
-  user: process.env.DB_USER,
-  password: process.env.DB_PASSWORD,
-  database: process.env.DB_NAME,
-  port: process.env.DB_PORT || 3306,
-  waitForConnections: true,
-  queueLimit: 0
+const server = http.createServer(app);
+const io = new Server(server, {
+  cors: { origin: "*", methods: ["GET", "POST"] }
 });
-
-dbPool.getConnection()
-  .then(conn => { console.log('✅ Connected to MySQL database pool.'); conn.release(); })
-  .catch(err => { console.error('❌ Database connection pool failed:', err); process.exit(1); });
+const port = process.env.PORT || 3000;
+const TCP_HOST = process.env.TCP_HOST || '192.168.254.141';
+const TCP_PORT = process.env.TCP_PORT || 8888;
+const SMS_BASE_URL = process.env.SMS_BASE_URL || 'http://localhost:3000';
 
 app.use(cors());
 app.use(express.urlencoded({ extended: true }));
 app.use(express.json());
 app.use(express.static(path.join(__dirname, 'public')));
 
-const server = http.createServer(app);
-const io = new Server(server, {
-  cors: { origin: "*", methods: ["GET", "POST"] }
+const dbPool = mysql.createPool({
+  connectionLimit: 10,
+  host: process.env.DB_HOST || '127.0.0.1',
+  user: process.env.DB_USER || 'root',
+  password: process.env.DB_PASSWORD || 'password',
+  database: process.env.DB_NAME || 'trashtrack_db',
+  port: process.env.DB_PORT || 3306,
+  waitForConnections: true,
+  queueLimit: 0
 });
 
-let polygons = [];
-let turfPolygons = [];
+dbPool.getConnection()
+  .then(conn => {
+    console.log('✅ Connected to MySQL database pool');
+    conn.release();
+  })
+  .catch(err => {
+    console.error('❌ Database connection pool failed:', err);
+    process.exit(1);
+  });
+
 let allStreetMarkers = [];
 
-try {
-  const rawPoly = fs.readFileSync(path.join(__dirname, 'public/data/polygon.json'));
-  polygons = JSON.parse(rawPoly);
-
-  turfPolygons = polygons.map(p => {
-    if (!p.coords || p.coords.length < 3) return null;
-    const ring = p.coords.map(c => [c[1], c[0]]);
-    if (ring[0][0] !== ring.at(-1)[0] || ring[0][1] !== ring.at(-1)[1]) {
-      ring.push([...ring[0]]);
-    }
-     try {
-        return { name: p.name, turf: turf.polygon([ring]) };
-    } catch (e) {
-        console.error(`Error creating polygon ${p.name}: ${e.message}`);
-        return null;
-    }
-  }).filter(Boolean);
-  console.log('✅ Geographic polygon data loaded.');
-
-  const rawStreets = fs.readFileSync(path.join(__dirname, 'public/data/streets.json'));
-  const streetGroups = JSON.parse(rawStreets);
-   Object.entries(streetGroups).forEach(([barangay, streets]) => {
-     streets.forEach(st => {
-       if (st.coords && st.coords.length === 2) {
-         allStreetMarkers.push({ ...st, barangay });
-       }
-     });
-   });
-   console.log('✅ Street marker data loaded.');
-
-} catch (err) {
-  console.error('❌ Failed to load map data:', err);
-}
-
-function getDistance(lat1, lon1, lat2, lon2) {
-  const R = 6371000;
-  const toRad = x => x * Math.PI / 180;
-  const dLat = toRad(lat2 - lat1);
-  const dLon = toRad(lon2 - lon1);
-  const a = Math.sin(dLat / 2) * Math.sin(dLat / 2) + Math.cos(toRad(lat1)) * Math.cos(toRad(lat2)) * Math.sin(dLon / 2) * Math.sin(dLon / 2);
-  const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
-  return R * c;
-}
-
-function findNearestStreet(latitude, longitude) {
-     if (!allStreetMarkers || allStreetMarkers.length === 0) {
-         console.warn("Street markers not loaded, cannot find nearest street.");
-         return null;
-     }
-     let closestStreet = null;
-     let minDistance = Infinity;
-     allStreetMarkers.forEach(item => {
-        if (item.coords && typeof item.coords[0] === 'number' && typeof item.coords[1] === 'number') {
-            const distance = getDistance(latitude, longitude, item.coords[0], item.coords[1]);
-            if (distance < minDistance) {
-                minDistance = distance;
-                closestStreet = { ...item, distance: minDistance };
-            }
-        }
-    });
-    return closestStreet;
-}
-
-app.post('/admin-register', async (req, res) => {
-  const { username, password } = req.body;
-  if (!username || !password) {
-    return res.status(400).send('Username and password are required.');
-  }
+async function loadMapData() {
   try {
-    const hashed = await bcrypt.hash(password, 10);
-    const conn = await dbPool.getConnection();
-    await conn.query(
-      'INSERT INTO admins (admin_id, username, password) VALUES (?, ?, ?)',
-      [`Admin-${Date.now()}`, username, hashed]
-    );
-    conn.release();
-    res.send('✅ Admin registered successfully!');
+    await fs.readFile(path.join(__dirname, 'public/data/polygon.json'));
+    console.log('✅ Geographic polygon data loaded');
+    const rawStreets = await fs.readFile(path.join(__dirname, 'public/data/streets.json'));
+    const streetGroups = JSON.parse(rawStreets);
+    allStreetMarkers = [];
+    Object.entries(streetGroups).forEach(([barangay, streets]) => {
+      streets.forEach(st => {
+        if (st.coords && st.coords.length === 2 && !isNaN(st.coords[0]) && !isNaN(st.coords[1])) {
+          allStreetMarkers.push({ ...st, barangay });
+        }
+      });
+    });
+    console.log(`✅ Street marker data loaded: ${allStreetMarkers.length} markers`);
   } catch (err) {
-    console.error('❌ Admin registration error:', err);
-    res.status(500).send('Admin registration error');
+    console.error('[Server] Error loading map data:', err.message);
+  }
+}
+
+loadMapData();
+
+app.get('/data/polygon.json', async (req, res) => {
+  try {
+    const data = await fs.readFile(path.join(__dirname, 'public/data/polygon.json'));
+    res.json(JSON.parse(data));
+  } catch (err) {
+    console.error('[Server] Error serving polygon.json:', err.message);
+    res.status(500).send('Failed to load polygon data');
   }
 });
 
-app.post('/admin-login', async (req, res) => {
-  const { username, password } = req.body;
-  if (!username || !password) return res.status(400).send('All fields required.');
+app.get('/data/streets.json', async (req, res) => {
   try {
-    const conn = await dbPool.getConnection();
-    const [rows] = await conn.query('SELECT * FROM admins WHERE username = ?', [username]);
-    conn.release();
-    if (rows.length === 0) return res.status(401).send('Invalid credentials.');
-    const admin = rows[0];
-    const valid = await bcrypt.compare(password, admin.password);
-    if (!valid) return res.status(401).send('Invalid credentials.');
-    res.json({
-      message: '✅ Login successful!',
-      admin_id: admin.admin_id,
-      username: admin.username
-    });
+    const data = await fs.readFile(path.join(__dirname, 'public/data/streets.json'));
+    res.json(JSON.parse(data));
   } catch (err) {
-    console.error('❌ Login error:', err);
-    res.status(500).send('Login failed.');
+    console.error('[Server] Error serving streets.json:', err.message);
+    res.status(500).send('Failed to load street data');
   }
 });
 
 app.get('/users', async (req, res) => {
   try {
     const conn = await dbPool.getConnection();
-    const [users] = await conn.query('SELECT * FROM users ORDER BY id DESC');
+    const [rows] = await conn.query('SELECT * FROM users ORDER BY id DESC');
     conn.release();
-    res.json(users);
+    res.json(rows);
   } catch (err) {
-    console.error('Error fetching users:', err);
-    res.status(500).send('Error fetching users.');
+    console.error(`[DB] Error fetching users: ${err.message}`);
+    res.status(500).json({ error: 'Failed to fetch users: Database unavailable' });
+  }
+});
+
+app.post('/register', async (req, res) => {
+  const { name, phone, barangay } = req.body;
+  console.log(`[POST /register] Received data:`, { name, phone, barangay });
+  console.log(`[POST /register] Server version: 2025-10-22-01-30`);
+  if (!name || !phone || !barangay) {
+    return res.status(400).json({ error: 'Missing required fields' });
+  }
+  if (!['Tugatog', 'Acacia', 'Tinajeros'].includes(barangay)) {
+    return res.status(400).json({ error: 'Invalid barangay. Must be Tugatog, Acacia, or Tinajeros.' });
+  }
+  if (!/^09\d{9}$/.test(phone)) {
+    console.warn(`[POST /register] Invalid phone number format: ${phone}`);
+    return res.status(400).json({ error: 'Invalid phone number format. Must be 11 digits starting with 09.' });
+  }
+  try {
+    const conn = await dbPool.getConnection();
+    await conn.query('INSERT INTO users (name, phone, barangay) VALUES (?, ?, ?)', 
+      [name, phone, barangay]);
+    conn.release();
+    console.log(`[DB] Registered user: ${name}, ${phone}, ${barangay}`);
+    res.json({ message: '✅ Registration successful' });
+  } catch (err) {
+    console.error(`[DB] Error registering user: ${err.message}`);
+    res.status(500).json({ error: `Failed to register: Database unavailable - ${err.message}` });
   }
 });
 
 app.get('/schedule', async (req, res) => {
   try {
     const conn = await dbPool.getConnection();
-    const [schedules] = await conn.query('SELECT barangay, day, start_time FROM schedules');
+    const [rows] = await conn.query('SELECT barangay, day, start_time FROM schedules');
     conn.release();
-    res.json(schedules);
+    console.log(`[GET /schedule] Fetched ${rows.length} schedule entries`);
+    res.json(rows);
   } catch (err) {
-    console.error('Error fetching schedule:', err);
-    res.status(500).send('Error fetching schedule');
+    console.error(`[DB] Error fetching schedule: ${err.message}`);
+    res.status(500).json({ error: 'Failed to fetch schedule: Database unavailable' });
   }
 });
 
 app.post('/schedule', async (req, res) => {
   const { barangay, day, start_time, updated_by } = req.body;
+  console.log(`[POST /schedule] Received data:`, { barangay, day, start_time, updated_by });
   if (!barangay || !day || !start_time) {
-    return res.status(400).send('All fields required');
+    return res.status(400).json({ error: 'Missing required fields' });
+  }
+  if (!['Tugatog', 'Acacia', 'Tinajeros'].includes(barangay)) {
+    return res.status(400).json({ error: 'Invalid barangay' });
+  }
+  if (!['MON', 'TUE', 'WED', 'THU', 'FRI', 'SAT', 'SUN'].includes(day)) {
+    return res.status(400).json({ error: 'Invalid day' });
+  }
+  if (!/^\d{2}:\d{2}:\d{2}$/.test(start_time)) {
+    return res.status(400).json({ error: 'Invalid time format (HH:MM:SS)' });
   }
   try {
     const conn = await dbPool.getConnection();
@@ -187,49 +164,113 @@ app.post('/schedule', async (req, res) => {
     );
     conn.release();
     io.emit('schedule-update');
-    res.send('✅ Schedule updated successfully!');
+    console.log(`[DB] Updated schedule: ${barangay}, ${day}, ${start_time}`);
+    res.json({ message: '✅ Schedule updated successfully' });
   } catch (err) {
-    console.error('❌ Error updating schedule:', err);
-    res.status(500).send('Error updating schedule');
+    console.error(`[DB] Error updating schedule: ${err.message}`);
+    res.status(500).json({ error: `Failed to update schedule: Database unavailable - ${err.message}` });
   }
 });
 
-const streetProximity = 15;
+app.post('/admin-register', async (req, res) => {
+  const { username, password } = req.body;
+  console.log(`[POST /admin-register] Received data:`, { username });
+  if (!username || !password) {
+    return res.status(400).json({ error: 'Missing username or password' });
+  }
+  if (username.length < 3) {
+    return res.status(400).json({ error: 'Username must be at least 3 characters' });
+  }
+  if (password.length < 8) {
+    return res.status(400).json({ error: 'Password must be at least 8 characters' });
+  }
+  try {
+    const conn = await dbPool.getConnection();
+    const [existing] = await conn.query('SELECT username FROM admins WHERE username = ?', [username]);
+    if (existing.length > 0) {
+      conn.release();
+      return res.status(400).json({ error: 'Username already exists' });
+    }
+    const hashed = await bcrypt.hash(password, 10);
+    await conn.query(
+      'INSERT INTO admins (username, password) VALUES (?, ?)',
+      [username, hashed]
+    );
+    conn.release();
+    console.log(`[DB] Registered admin: ${username}`);
+    res.json({ message: '✅ Admin registration successful' });
+  } catch (err) {
+    console.error(`[DB] Error registering admin: ${err.message}`);
+    res.status(500).json({ error: `Failed to register admin: ${err.message}` });
+  }
+});
+
+app.post('/admin-login', async (req, res) => {
+  const { username, password } = req.body;
+  console.log(`[POST /admin-login] Received data:`, { username });
+  if (!username || !password) {
+    return res.status(400).json({ error: 'Missing username or password' });
+  }
+  try {
+    const conn = await dbPool.getConnection();
+    const [rows] = await conn.query('SELECT * FROM admins WHERE username = ?', [username]);
+    conn.release();
+    if (rows.length === 0) {
+      return res.status(401).json({ error: 'Invalid username or password' });
+    }
+    const admin = rows[0];
+    const isMatch = await bcrypt.compare(password, admin.password);
+    if (!isMatch) {
+      return res.status(401).json({ error: 'Invalid username or password' });
+    }
+    console.log(`[DB] Admin login successful: ${username}`);
+    res.json({
+      message: '✅ Login successful',
+      id: admin.id,
+      username: admin.username
+    });
+  } catch (err) {
+    console.error(`[DB] Error logging in admin: ${err.message}`);
+    res.status(500).json({ error: `Failed to login: Database unavailable - ${err.message}` });
+  }
+});
 
 app.get('/eta/:truckId', async (req, res) => {
   const { truckId } = req.params;
-
-  if (!app.locals.lastKnownLocations) {
-      app.locals.lastKnownLocations = {};
-  }
-
-  const lastKnown = app.locals.lastKnownLocations[truckId];
-
-  if (!lastKnown) {
-    return res.status(404).json({ etaMinutes: -1, nextStop: "Unknown", error: "Truck location not yet received by server" });
-  }
-
+  console.log(`[ETA] Received request for truckId: ${truckId}`);
   try {
-    const currentLat = parseFloat(lastKnown.latitude);
-    const currentLon = parseFloat(lastKnown.longitude);
-    const nearestMarkerToCurrent = findNearestStreet(currentLat, currentLon);
-    const predictedNextMarkerName = nearestMarkerToCurrent ? nearestMarkerToCurrent.name : "Unknown";
-    let etaMinutes = -1;
-
-    if (nearestMarkerToCurrent) {
-        if (nearestMarkerToCurrent.distance <= streetProximity) {
-            etaMinutes = 0;
-        } else {
-            const fallbackSpeedMetersPerSecond = 5.5;
-            const secondsToReach = nearestMarkerToCurrent.distance / fallbackSpeedMetersPerSecond;
-            etaMinutes = Math.round(secondsToReach / 60);
-        }
+    const lastKnown = app.locals.lastKnownLocations?.[truckId];
+    if (!lastKnown) {
+      console.warn(`[ETA] No location data for ${truckId}`);
+      return res.status(404).json({ etaMinutes: -1, nextStop: 'Unknown', error: 'No location data' });
     }
-    console.log(`[ETA] Calculation for ${truckId}: Lat=${currentLat}, Lon=${currentLon}, Nearest=${predictedNextMarkerName}, Dist=${nearestMarkerToCurrent?.distance.toFixed(1)}m, ETA=${etaMinutes}min`);
-    res.json({ etaMinutes: etaMinutes, nextStop: predictedNextMarkerName });
-  } catch (error) {
-    console.error(`❌ Error calculating ETA for ${truckId}:`, error);
-    res.status(500).json({ etaMinutes: -1, nextStop: "Error", error: "Server error during ETA calculation" });
+    const { latitude, longitude } = lastKnown;
+    if (isNaN(latitude) || isNaN(longitude)) {
+      console.warn(`[ETA] Invalid coordinates for ${truckId}:`, lastKnown);
+      return res.status(500).json({ etaMinutes: -1, nextStop: 'Unknown', error: 'Invalid coordinates' });
+    }
+    if (!allStreetMarkers || allStreetMarkers.length === 0) {
+      console.warn(`[ETA] No street markers loaded for ${truckId}`);
+      return res.status(500).json({ etaMinutes: -1, nextStop: 'Unknown', error: 'Street markers not loaded' });
+    }
+    let minDistance = Infinity;
+    let nextStop = null;
+    for (const street of allStreetMarkers) {
+      const distance = Math.sqrt(
+        Math.pow(latitude - street.coords[0], 2) +
+        Math.pow(longitude - street.coords[1], 2)
+      );
+      if (distance < minDistance) {
+        minDistance = distance;
+        nextStop = street.name;
+      }
+    }
+    const etaMinutes = minDistance < 0.000135 ? 0 : Math.round(minDistance * 10000);
+    console.log(`[ETA] Calculated for ${truckId}: Lat=${latitude}, Lon=${longitude}, NextStop=${nextStop}, ETA=${etaMinutes}min`);
+    res.json({ etaMinutes, nextStop });
+  } catch (err) {
+    console.error(`[ETA] Error for ${truckId}: ${err.message}`);
+    res.status(500).json({ error: `Failed to calculate ETA: ${err.message}` });
   }
 });
 
@@ -237,167 +278,179 @@ let arduinoClient = null;
 let connectionAttempts = 0;
 const MAX_ATTEMPTS = 5;
 const RETRY_DELAY = 10000;
+const smsQueue = [];
 
 function connectToArduino() {
   if (arduinoClient && !arduinoClient.destroyed && !arduinoClient.connecting) {
-    console.log('[TCP] Already connected to Arduino.');
-    return;
-  }
-  if (arduinoClient && arduinoClient.connecting) {
-    console.log('[TCP] Connection attempt already in progress.');
+    console.log('[TCP] Already connected to Arduino');
     return;
   }
   if (connectionAttempts >= MAX_ATTEMPTS) {
-      console.error(`❌ [TCP] Max connection attempts reached. Stopping retries for Arduino.`);
-      return;
+    console.error('[TCP] Max connection attempts reached');
+    return;
   }
-  console.log(`[TCP] Attempt ${connectionAttempts + 1}/${MAX_ATTEMPTS} to connect to Arduino at ${ARDUINO_IP}:${ARDUINO_PORT}...`);
+  console.log(`[TCP] Attempt ${connectionAttempts + 1}/${MAX_ATTEMPTS} to connect to Arduino at ${TCP_HOST}:${TCP_PORT}...`);
   connectionAttempts++;
   arduinoClient = new net.Socket();
   arduinoClient.connecting = true;
   arduinoClient.setTimeout(5000, () => {
     if (arduinoClient.connecting) {
-        console.error(`[TCP] Connection attempt timed out.`);
-        arduinoClient.destroy();
+      console.error('[TCP] Connection attempt timed out');
+      arduinoClient.destroy();
     }
   });
-  arduinoClient.connect(ARDUINO_PORT, ARDUINO_IP, () => {
-    console.log(`✅ [TCP] Connected to Arduino (${ARDUINO_IP}:${ARDUINO_PORT})`);
+  arduinoClient.connect(TCP_PORT, TCP_HOST, () => {
+    console.log(`✅ [TCP] Connected to Arduino (${TCP_HOST}:${TCP_PORT})`);
     arduinoClient.connecting = false;
     connectionAttempts = 0;
     arduinoClient.setTimeout(0);
+    while (smsQueue.length > 0) {
+      const { command, callback } = smsQueue.shift();
+      try {
+        arduinoClient.write(command);
+        console.log(`[TCP] Sending queued command: ${command.trim()}`);
+        callback(null, `✅ Queued command sent: ${command.trim()}`);
+      } catch (err) {
+        console.error(`[TCP] Error sending queued command: ${err.message}`);
+        callback(err);
+      }
+    }
   });
   arduinoClient.on('data', (data) => {
-    console.log(`[TCP] Received from Arduino: ${data.toString().trim()}`);
+    const response = data.toString().trim();
+    console.log(`[TCP] Received from Arduino: ${response}`);
   });
   arduinoClient.on('close', (hadError) => {
-    console.log(`🔌 [TCP] Connection to Arduino closed ${hadError ? 'due to error' : 'normally'}.`);
+    console.log(`[TCP] Connection closed ${hadError ? 'due to error' : 'normally'}`);
     arduinoClient.connecting = false;
     arduinoClient = null;
-    console.log(`[TCP] Retrying connection in ${RETRY_DELAY / 1000} seconds...`);
     setTimeout(connectToArduino, RETRY_DELAY);
   });
   arduinoClient.on('error', (err) => {
-    console.error(`❌ [TCP] Connection error: ${err.message}`);
+    console.error(`[TCP] Error: ${err.message}`);
     arduinoClient.connecting = false;
     if (arduinoClient && !arduinoClient.destroyed) {
-        arduinoClient.destroy();
+      arduinoClient.destroy();
     }
     arduinoClient = null;
   });
 }
 
-if (ARDUINO_IP && ARDUINO_IP !== "YOUR_ROUTER_PUBLIC_IP") {
-    connectToArduino();
-} else {
-    console.warn("⚠️ ARDUINO_IP is not set. Cannot connect to Arduino TCP server.");
-}
+connectToArduino();
 
-app.post('/send-sms', (req, res) => {
-    const { message, phone } = req.body;
-    if (!message) {
-        return res.status(400).send('Missing "message" in request body.');
-    }
-    if (!arduinoClient || arduinoClient.destroyed) {
-        console.warn('⚠️ [TCP] Attempted to send SMS, but not connected to Arduino.');
-        if (!arduinoClient?.connecting) connectToArduino(); // Try reconnecting
-        return res.status(503).send('Not connected to the truck device.');
-    }
-    let command;
-    if (phone) {
-        command = `send_sms:${message.trim()} (${phone.trim()})\n`;
-    } else {
-        command = `send_sms:${message.trim()}\n`;
-    }
-    console.log(`[TCP] Sending command to Arduino: ${command.trim()}`);
-    try {
-        arduinoClient.write(command);
-        res.send(`✅ Command sent to Arduino: ${command.trim()}`);
-    } catch (err) {
-        console.error(`❌ [TCP] Error sending command: ${err.message}`);
-        res.status(500).send('Error sending command to device.');
-    }
-});
-
-io.on('connection', socket => {
+io.on('connection', (socket) => {
   console.log(`🟢 Client connected: ${socket.id}`);
-
-  socket.on('update-location', data => {
+  socket.on('update-location', (data) => {
     const { latitude, longitude, truckId, source } = data;
-    if (!latitude || !longitude || !truckId) return;
-
-    if (!app.locals.lastKnownLocations) {
-        app.locals.lastKnownLocations = {};
+    if (!latitude || !longitude || !truckId) {
+      console.warn(`[Socket.IO] Invalid location data: ${JSON.stringify(data)}`);
+      return;
     }
-    app.locals.lastKnownLocations[truckId] = { latitude, longitude, timestamp: Date.now() };
-
-    console.log(`[Socket.IO] Broadcasting location for ${truckId} from ${source || '?'}`);
-    io.emit('location-update', data);
+    app.locals.lastKnownLocations = app.locals.lastKnownLocations || {};
+    app.locals.lastKnownLocations[truckId] = { latitude, longitude, source, timestamp: Date.now() };
+    console.log(`[Socket.IO] Stored location for ${truckId}: Lat=${latitude}, Lon=${longitude}, Source=${source || 'unknown'}`);
+    socket.broadcast.emit('location-update', data);
   });
-
-  socket.on('simulator-moved-trigger-sms', async (locationData) => {
-    console.log('[Socket.IO] Received simulator-moved-trigger-sms:', locationData);
-    const { latitude, longitude } = locationData;
-    if (latitude === undefined || longitude === undefined) {
-      console.warn('⚠️ Received invalid location data for SMS trigger.');
+  socket.on('simulator-moved-trigger-sms', async (data) => {
+    console.log(`[Socket.IO] Received simulator-moved-trigger-sms: ${JSON.stringify(data)}`);
+    const { barangay, truckId, latitude, longitude } = data;
+    if (!barangay) {
+      console.warn('[Socket.IO] Missing barangay for SMS:', data);
       return;
     }
-
-    let targetBarangay = null;
-    const point = turf.point([longitude, latitude]);
-    for (const zone of turfPolygons) {
-      if (zone.turf && turf.booleanPointInPolygon(point, zone.turf)) {
-        targetBarangay = zone.name;
-        console.log(`📍 Simulator location is inside Barangay: ${targetBarangay}`);
-        break;
-      }
-    }
-
-    if (!targetBarangay) {
-      console.log('📍 Simulator location is not inside any known Barangay polygon.');
-      return;
-    }
-
-    let usersToSend = [];
-    let conn;
     try {
-      conn = await dbPool.getConnection();
-      const [users] = await conn.query('SELECT phone FROM users WHERE barangay = ?', [targetBarangay]);
-      usersToSend = users;
-      console.log(`Found ${usersToSend.length} users in ${targetBarangay}.`);
-    } catch (dbError) {
-      console.error(`❌ Error querying users for ${targetBarangay}:`, dbError);
-    } finally {
-      if (conn) conn.release();
-    }
-
-    if (usersToSend.length > 0) {
+      let lat = latitude;
+      let lon = longitude;
+      if (truckId && !latitude && !longitude) {
+        const lastKnown = app.locals.lastKnownLocations?.[truckId];
+        if (!lastKnown) {
+          console.warn(`[Socket.IO] No location data for truckId: ${truckId}`);
+          return;
+        }
+        lat = lastKnown.latitude;
+        lon = lastKnown.longitude;
+      }
+      if (!lat || !lon || isNaN(lat) || isNaN(lon)) {
+        console.warn(`[Socket.IO] Invalid coordinates for SMS:`, { lat, lon, truckId });
+        return;
+      }
+      if (!allStreetMarkers || allStreetMarkers.length === 0) {
+        console.warn('[Socket.IO] No street markers loaded for SMS');
+        return;
+      }
+      let minDistance = Infinity;
+      let closestStreet = 'Unknown';
+      for (const street of allStreetMarkers) {
+        if (street.barangay === barangay) {
+          const distance = Math.sqrt(
+            Math.pow(lat - street.coords[0], 2) +
+            Math.pow(lon - street.coords[1], 2)
+          );
+          if (distance < minDistance) {
+            minDistance = distance;
+            closestStreet = street.name;
+          }
+        }
+      }
+      console.log(`[Socket.IO] Closest street in ${barangay}: ${closestStreet}, Distance: ${minDistance}`);
+      const conn = await dbPool.getConnection();
+      const [users] = await conn.query('SELECT phone FROM users WHERE barangay = ?', [barangay]);
+      conn.release();
+      console.log(`[Socket.IO] Found ${users.length} users in ${barangay}:`, users.map(u => u.phone));
+      const phoneNumbers = users
+        .map(user => {
+          const phone = user.phone;
+          if (/^09\d{9}$/.test(phone)) {
+            return `+63${phone.slice(1)}`;
+          }
+          return null;
+        })
+        .filter(phone => phone !== null);
+      if (phoneNumbers.length === 0) {
+        console.log(`[Socket.IO] No valid phone numbers for barangay: ${barangay}`);
+        return;
+      }
+      console.log(`[Socket.IO] Sending SMS to ${phoneNumbers.length} valid users in ${barangay}: ${phoneNumbers.join(', ')}`);
+      const message = `Truck is in Brgy ${barangay}, Street: ${closestStreet}`;
+      const command = `batch_sms:${message} (${phoneNumbers.join(',')})\n`;
       if (!arduinoClient || arduinoClient.destroyed) {
-        console.warn('⚠️ Cannot send SMS commands: Not connected to Arduino.');
+        console.warn('[TCP] Arduino not connected, queuing SMS');
+        smsQueue.push({
+          command,
+          callback: (err) => {
+            if (err) console.error(`[Socket.IO] Error queuing SMS: ${err.message}`);
+            else console.log(`[Socket.IO] Queued SMS: ${command.trim()}`);
+          }
+        });
         if (!arduinoClient?.connecting) connectToArduino();
         return;
       }
-      const baseMessage = `Trash truck is near Brgy ${targetBarangay}`;
-      usersToSend.forEach(user => {
-        if (user.phone) {
-          const command = `send_sms:${baseMessage} (${user.phone})\n`;
-          console.log(`[TCP] Sending command to Arduino: ${command.trim()}`);
-          try {
-            arduinoClient.write(command);
-          } catch (tcpError) {
-            console.error(`❌ [TCP] Error sending command: ${tcpError.message}`);
+      try {
+        arduinoClient.write(command);
+        console.log(`[TCP] Sending batch command to Arduino: ${command.trim()}`);
+      } catch (err) {
+        console.error(`[Socket.IO] Error sending SMS: ${err.message}`);
+        smsQueue.push({
+          command,
+          callback: (err) => {
+            if (err) console.error(`[Socket.IO] Error queuing SMS: ${err.message}`);
+            else console.log(`[Socket.IO] Queued SMS: ${command.trim()}`);
           }
-        }
-      });
+        });
+      }
+    } catch (err) {
+      console.error(`[Socket.IO] Error processing SMS for ${barangay}: ${err.message}`);
     }
   });
-
+  socket.on('schedule-update', () => {
+    console.log('[Socket.IO] Broadcasting schedule-update');
+    socket.broadcast.emit('schedule-update');
+  });
   socket.on('disconnect', () => {
-    console.log(`🔴 Client disconnected: ${socket.id}`);
-    // Optional: Clean up truckSockets if you were tracking simulator sockets
+    console.log(`[Socket.IO] Client disconnected: ${socket.id}`);
   });
 });
 
 server.listen(port, () => {
-  console.log(`🚀 Server running at http://localhost:${port} or your Render URL`);
+  console.log(`🚀 Server running at http://localhost:${port}`);
 });

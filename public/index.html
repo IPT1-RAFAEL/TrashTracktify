@@ -11,13 +11,7 @@
   <div class="container">
     <div class="schedule">
       <h1>SCHEDULE</h1>
-      <div id="driverLogin">
-        <input type="text" id="driverIdInput" placeholder="Enter Driver ID (e.g., Driver-123)">
-        <button id="loginDriver">Login as Driver</button>
-        <div id="loginMsg"></div>
-      </div>
-      <div id="scheduleContainer">
-        <div class="barangay" id="Tugatog">
+      <div class="barangays">  <div class="barangay" id="Tugatog">
           <h2>Tugatog</h2>
           <div class="days" id="Tugatog-days"></div>
         </div>
@@ -30,19 +24,7 @@
           <div class="days" id="Tinajeros-days"></div>
         </div>
       </div>
-      <div id="editSchedulePopup" class="popup">
-        <div class="popup-content">
-          <h3>Edit Schedule</h3>
-          <form id="editScheduleForm">
-            <label>Barangay: <span id="editBarangay"></span></label>
-            <label>Day: <span id="editDay"></span></label>
-            <input type="time" name="start_time" required>
-            <button type="submit">Save</button>
-            <div class="msg" id="editMsg"></div>
-          </form>
-        </div>
       </div>
-    </div>
     <div class="map-container">
       <div id="map"></div>
     </div>
