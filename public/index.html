@@ -4,51 +4,52 @@
   <meta charset="UTF-8">
   <title>Trashtrackify Map</title>
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-
-  <!-- Leaflet CSS -->
   <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
   <link rel="stylesheet" href="css/index.css" />
 </head>
 <body>
-
   <div class="container">
-    <!-- Left side: Schedule -->
     <div class="schedule">
       <h1>SCHEDULE</h1>
-
-      <div class="barangay">
-        <h2>Tugatog</h2>
-        <div class="days">
-          <span>MON</span><span>TUE</span><span>WED</span><span>THU</span><span>FRI</span><span>SAT</span><span>SUN</span>
+      <div id="driverLogin">
+        <input type="text" id="driverIdInput" placeholder="Enter Driver ID (e.g., Driver-123)">
+        <button id="loginDriver">Login as Driver</button>
+        <div id="loginMsg"></div>
+      </div>
+      <div id="scheduleContainer">
+        <div class="barangay" id="Tugatog">
+          <h2>Tugatog</h2>
+          <div class="days" id="Tugatog-days"></div>
+        </div>
+        <div class="barangay" id="Acacia">
+          <h2>Acacia</h2>
+          <div class="days" id="Acacia-days"></div>
+        </div>
+        <div class="barangay" id="Tinajeros">
+          <h2>Tinajeros</h2>
+          <div class="days" id="Tinajeros-days"></div>
         </div>
       </div>
-
-      <div class="barangay">
-        <h2>Acacia</h2>
-        <div class="days">
-          <span>MON</span><span>TUE</span><span>WED</span><span>THU</span><span>FRI</span><span>SAT</span><span>SUN</span>
-        </div>
-      </div>
-
-      <div class="barangay">
-        <h2>Tinajeros</h2>
-        <div class="days">
-          <span>MON</span><span>TUE</span><span>WED</span><span>THU</span><span>FRI</span><span>SAT</span><span>SUN</span>
+      <div id="editSchedulePopup" class="popup">
+        <div class="popup-content">
+          <h3>Edit Schedule</h3>
+          <form id="editScheduleForm">
+            <label>Barangay: <span id="editBarangay"></span></label>
+            <label>Day: <span id="editDay"></span></label>
+            <input type="time" name="start_time" required>
+            <button type="submit">Save</button>
+            <div class="msg" id="editMsg"></div>
+          </form>
         </div>
       </div>
     </div>
-
-    <!-- Right side: Map -->
     <div class="map-container">
       <div id="map"></div>
     </div>
   </div>
-
-  <!-- Leaflet JS -->
   <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
   <script src="https://unpkg.com/@turf/turf/turf.min.js"></script>
   <script src="https://cdn.socket.io/4.7.2/socket.io.min.js"></script>
   <script src="js/index.js"></script>
-
 </body>
 </html>

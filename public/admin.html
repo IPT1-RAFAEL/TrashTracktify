@@ -1,0 +1,114 @@
+<!doctype html>
+<html lang="en">
+>
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width,initial-scale=1" />
+  <title>Admin Dashboard | Garbage Truck Monitor</title>
+  <link rel="stylesheet" href="https://unpkg.com/leaflet/dist/leaflet.css" />
+  <link rel="stylesheet" href="css/admin.css" />
+</head>
+<body>
+  <div class="container">
+    <div class="topbar">
+      <div class="left"><b>ADMIN DASHBOARD</b></div>
+      <div class="right">
+        <button id="adminLoginBtn" class="pill">LOGIN</button>
+        <button id="adminLogoutBtn" class="pill" style="display:none;">LOGOUT</button>
+      </div>
+    </div>
+
+    <div class="map-container">
+      <div id="map"></div>
+    </div>
+
+    <div class="schedule">
+      <h1>Barangay Schedule (Editable)</h1>
+      <div class="barangays">
+        <div class="barangay-card" data-name="Tugatog">
+          <h2>Tugatog</h2>
+          <img src="calendar-icon.png" class="calendar-icon" data-brgy="Tugatog">
+          <div id="Tugatog-days" class="days"></div>
+        </div>
+
+        <div class="barangay-card" data-name="Acacia">
+          <h2>Acacia</h2>
+          <img src="calendar-icon.png" class="calendar-icon" data-brgy="Acacia">
+          <div id="Acacia-days" class="days"></div>
+        </div>
+
+        <div class="barangay-card" data-name="Tinajeros">
+          <h2>Tinajeros</h2>
+          <img src="calendar-icon.png" class="calendar-icon" data-brgy="Tinajeros">
+          <div id="Tinajeros-days" class="days"></div>
+        </div>
+      </div>
+
+      <hr/>
+
+      <section class="residents-section">
+        <h3>Registered Residents</h3>
+        <div class="residents-wrapper">
+          <table id="residentsTable">
+            <thead>
+              <tr><th>ID</th><th>Name</th><th>Phone</th><th>Barangay</th></tr>
+            </thead>
+            <tbody></tbody>
+          </table>
+        </div>
+      </section>
+    </div>
+  </div>
+
+  <!-- LOGIN MODAL -->
+  <div id="loginModal" class="modal-overlay">
+    <div class="modal-card small">
+      <h3>Admin Login</h3>
+      <label>Username <input id="loginUser" type="text"></label>
+      <label>Password <input id="loginPass" type="password"></label>
+      <div id="loginMsg" class="msg"></div>
+      <div class="modal-actions">
+        <button id="loginSubmit" class="btn">Login</button>
+        <button id="showRegister" class="btn ghost">Register</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- REGISTER MODAL -->
+  <div id="registerModal" class="modal-overlay">
+    <div class="modal-card small">
+      <h3>Register Admin</h3>
+      <label>Username <input id="regUser" type="text"></label>
+      <label>Password <input id="regPass" type="password"></label>
+      <div id="regMsg" class="msg"></div>
+      <div class="modal-actions">
+        <button id="regSubmit" class="btn">Register</button>
+        <button id="showLogin" class="btn ghost">Back to Login</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- EDIT SCHEDULE POPUP -->
+  <div id="editSchedulePopup" class="modal-overlay">
+    <div class="modal-card small">
+      <h3>Edit Schedule</h3>
+      <div><strong>Barangay:</strong> <span id="editBarangay"></span></div>
+      <div><strong>Day:</strong> <span id="editDay"></span></div>
+      <form id="editScheduleForm">
+        <label>Start time:
+          <input name="start_time" type="time" required />
+        </label>
+        <div id="editMsg" class="msg"></div>
+        <div class="modal-actions">
+          <button type="submit" class="btn">Save</button>
+          <button type="button" class="btn ghost" onclick="document.getElementById('editSchedulePopup').classList.remove('show')">Cancel</button>
+        </div>
+      </form>
+    </div>
+  </div>
+
+  <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+  <script src="https://cdn.socket.io/4.7.2/socket.io.min.js"></script>
+  <script src="js/admin.js"></script>
+</body>
+</html>

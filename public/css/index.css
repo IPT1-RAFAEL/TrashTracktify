@@ -47,6 +47,18 @@ body {
   border-radius: 0 0 25px 25px;
 }
 
+.schedule .days span {
+  display: inline-block;
+  width: 80px;
+  text-align: center;
+  padding: 5px;
+  margin: 2px;
+  border: 1px solid #ccc;
+  cursor: pointer;
+}
+.schedule .days span.editable:hover {
+  background-color: #f0f0f0;
+}
 .schedule h1 {
   text-align: center;
   font-size: 2rem;

@@ -9,41 +9,28 @@
 </head>
 <body>
   <div class="container">
-    <!-- Left side: Schedule -->
     <div class="schedule">
       <h1>SCHEDULE</h1>
-
-      <div class="barangay">
-        <h2>Tugatog</h2>
-        <div class="days">
-          <span>MON</span><span>TUE</span><span>WED</span><span>THU</span><span>FRI</span><span>SAT</span><span>SUN</span>
+      <div id="scheduleContainer">
+        <div class="barangay" id="Tugatog">
+          <h2>Tugatog</h2>
+          <div class="days" id="Tugatog-days"></div>
+        </div>
+        <div class="barangay" id="Acacia">
+          <h2>Acacia</h2>
+          <div class="days" id="Acacia-days"></div>
+        </div>
+        <div class="barangay" id="Tinajeros">
+          <h2>Tinajeros</h2>
+          <div class="days" id="Tinajeros-days"></div>
         </div>
       </div>
-
-      <div class="barangay">
-        <h2>Acacia</h2>
-        <div class="days">
-          <span>MON</span><span>TUE</span><span>WED</span><span>THU</span><span>FRI</span><span>SAT</span><span>SUN</span>
-        </div>
-      </div>
-
-      <div class="barangay">
-        <h2>Tinajeros</h2>
-        <div class="days">
-          <span>MON</span><span>TUE</span><span>WED</span><span>THU</span><span>FRI</span><span>SAT</span><span>SUN</span>
-        </div>
-      </div>
-
       <button id="openRegister">Register</button>
     </div>
-
-    <!-- Right side: Map -->
     <div class="map-container">
       <div id="map"></div>
     </div>
   </div>
-
-  <!-- Register Popup -->
   <div id="registerPopup" class="popup">
     <div class="popup-content">
       <img src="garbage-truck.png" alt="Truck" class="popup-icon">
@@ -63,14 +50,11 @@
       </form>
     </div>
   </div>
-
   <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
   <script src="https://unpkg.com/@turf/turf/turf.min.js"></script>
   <script src="https://cdn.socket.io/4.7.2/socket.io.min.js"></script>
   <script src="js/register.js"></script>
-
   <script>
-    // Popup logic
     const popup = document.getElementById('registerPopup');
     document.getElementById('openRegister').onclick = () => popup.classList.add('show');
     popup.onclick = (e) => { if (e.target === popup) popup.classList.remove('show'); };
