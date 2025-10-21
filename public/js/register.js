@@ -148,33 +148,35 @@ if (form) {
 
     try {
       const controller = new AbortController();
-      const timeoutId = setTimeout(() => controller.abort(), 15000); // Increased to 15s
+      const timeoutId = setTimeout(() => controller.abort(), 15000); 
       const res = await fetch('/register', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(data),
-        signal: controller.signal
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(data),
+          signal: controller.signal
       });
       clearTimeout(timeoutId);
 
-      if (!res.ok) {
-        const errorText = await res.text();
-        throw new Error(`Server error: ${res.status} ${errorText || res.statusText}`);
+      const result = await res.json(); 
+
+     if (!res.ok) {
+          throw new Error(result.error || `Server error: ${res.status}`);
       }
 
-      const text = await res.text();
-      msgBox.textContent = text || '✅ Registration successful!';
+      msgBox.textContent = result.message || '✅ Registration successful!'; 
+
       msgBox.style.color = 'green';
 
       e.target.reset();
       setTimeout(() => {
-        document.getElementById('registerPopup').classList.remove('show');
+          document.getElementById('registerPopup').classList.remove('show');
       }, 2000);
+
     } catch (err) {
       console.error('[Register] Registration error:', err);
       msgBox.textContent = err.name === 'AbortError' 
-        ? 'Request timed out. Please try again.'
-        : `Error: ${err.message}`;
+          ? 'Request timed out. Please try again.'
+          : err.message; // Display the actual error message
       msgBox.style.color = 'red';
     }
   });
