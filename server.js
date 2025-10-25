@@ -1,4 +1,4 @@
-require('dotenv').config();
+require('dotenv').config(); // Load .env variables FIRST
 const express = require('express');
 const mysql = require('mysql2/promise');
 const bcrypt = require('bcrypt');
@@ -8,6 +8,7 @@ const http = require('http');
 const { Server } = require('socket.io');
 const cors = require('cors');
 const mqtt = require('mqtt');
+const crypto = require('crypto');
 
 const app = express();
 const server = http.createServer(app);
@@ -17,21 +18,22 @@ const io = new Server(server, {
 const port = process.env.PORT || 3000;
 
 // --- MQTT Setup ---
-const MQTT_BROKER_URL = 'mqtt://broker.hivemq.com';
+const MQTT_BROKER_URL = process.env.MQTT_BROKER;
 const MQTT_TOPIC = 'trashtracktify/sms/send';
 
-console.log(`[MQTT] Connecting to broker at ${MQTT_BROKER_URL}...`);
-const mqttClient = mqtt.connect(MQTT_BROKER_URL);
+if (!MQTT_BROKER_URL) {
+    console.error('❌ MQTT_BROKER environment variable not set.');
+}
+console.log(`[MQTT] Attempting to connect to broker at ${MQTT_BROKER_URL}...`);
+const mqttClient = MQTT_BROKER_URL ? mqtt.connect(MQTT_BROKER_URL) : null;
 
-mqttClient.on('connect', () => {
-  console.log('✅ [MQTT] Connected to broker');
-});
-mqttClient.on('error', (err) => {
-  console.error(`[MQTT] Connection error: ${err.message}`);
-});
-mqttClient.on('close', () => {
-  console.log('[MQTT] Disconnected from broker');
-});
+if (mqttClient) {
+    mqttClient.on('connect', () => console.log('✅ [MQTT] Connected to broker'));
+    mqttClient.on('error', (err) => console.error(`[MQTT] Connection error: ${err.message}`));
+    mqttClient.on('close', () => console.log('[MQTT] Disconnected from broker'));
+} else {
+    console.warn('[MQTT] Client not initialized (MQTT_BROKER URL missing).');
+}
 // --- End MQTT Setup ---
 
 app.use(cors());
@@ -40,6 +42,11 @@ app.use(express.json());
 app.use(express.static(path.join(__dirname, 'public')));
 
 // --- Database Pool ---
+if (!process.env.DB_HOST || !process.env.DB_USER || !process.env.DB_PASSWORD || !process.env.DB_NAME || !process.env.DB_PORT) {
+    console.error('❌ Missing one or more required database environment variables.');
+    process.exit(1); // Exit if DB config is incomplete
+}
+
 const dbPool = mysql.createPool({
   connectionLimit: 10,
   host: process.env.DB_HOST,
@@ -51,13 +58,14 @@ const dbPool = mysql.createPool({
   queueLimit: 0
 });
 
+// Test DB connection on startup
 dbPool.getConnection()
   .then(conn => {
     console.log('✅ Connected to MySQL database pool');
     conn.release();
   })
   .catch(err => {
-    console.error('❌ Database connection pool failed:', err);
+    console.error('❌ Database connection pool failed:', err.message);
     process.exit(1);
   });
 // --- End Database Pool ---
@@ -68,13 +76,12 @@ let allStreetMarkers = [];
 async function loadMapData() {
   try {
     await fs.readFile(path.join(__dirname, 'public/data/polygon.json'));
-    console.log('✅ Geographic polygon data loaded');
     const rawStreets = await fs.readFile(path.join(__dirname, 'public/data/streets.json'));
     const streetGroups = JSON.parse(rawStreets);
     allStreetMarkers = [];
     Object.entries(streetGroups).forEach(([barangay, streets]) => {
       streets.forEach(st => {
-        if (st.coords && st.coords.length === 2 && !isNaN(st.coords[0]) && !isNaN(st.coords[1])) {
+        if (st.coords?.length === 2 && !isNaN(st.coords[0]) && !isNaN(st.coords[1])) {
           allStreetMarkers.push({ ...st, barangay });
         }
       });
@@ -89,189 +96,113 @@ loadMapData();
 
 
 // --- API Routes ---
+
+// GET /users - Fetch registered users
 app.get('/users', async (req, res) => {
+  let conn;
   try {
-    const conn = await dbPool.getConnection();
+    conn = await dbPool.getConnection();
     const [rows] = await conn.query('SELECT id, name, phone, barangay, street FROM users ORDER BY id DESC');
-    conn.release();
     res.json(rows);
   } catch (err) {
     console.error(`[DB] Error fetching users: ${err.message}`);
-    res.status(500).json({ error: 'Failed to fetch users: Database unavailable' });
+    res.status(500).json({ error: 'Failed to fetch users' });
+  } finally {
+    if (conn) conn.release();
   }
 });
 
+// POST /register - Register a new user
 app.post('/register', async (req, res) => {
   const { name, phone, barangay, street } = req.body;
-  console.log(`[POST /register] Received data:`, { name, phone, barangay, street });
+  if (!name || !phone || !barangay || !street) return res.status(400).json({ error: 'Missing required fields' });
+  if (!['Tugatog', 'Acacia', 'Tinajeros'].includes(barangay)) return res.status(400).json({ error: 'Invalid barangay.' });
+  if (!/^09\d{9}$/.test(phone)) return res.status(400).json({ error: 'Invalid phone number format.' });
 
-  if (!name || !phone || !barangay || !street) {
-    return res.status(400).json({ error: 'Missing required fields (name, phone, barangay, street)' });
-  }
-  if (!['Tugatog', 'Acacia', 'Tinajeros'].includes(barangay)) {
-    return res.status(400).json({ error: 'Invalid barangay. Must be Tugatog, Acacia, or Tinajeros.' });
-  }
-  if (!/^09\d{9}$/.test(phone)) {
-    console.warn(`[POST /register] Invalid phone number format: ${phone}`);
-    return res.status(400).json({ error: 'Invalid phone number format. Must be 11 digits starting with 09.' });
-  }
+  let conn;
   try {
-    const conn = await dbPool.getConnection();
-    await conn.query(
-      'INSERT INTO users (name, phone, barangay, street) VALUES (?, ?, ?, ?)',
-      [name, phone, barangay, street]
-    );
-    conn.release();
-    console.log(`[DB] Registered user: ${name}, ${phone}, ${barangay}, ${street}`);
-    io.emit('registered-stats-update'); // Signal stats page to refresh
+    conn = await dbPool.getConnection();
+    await conn.query('INSERT INTO users (name, phone, barangay, street) VALUES (?, ?, ?, ?)', [name, phone, barangay, street]);
+    io.emit('registered-stats-update'); // Notify clients
     res.json({ message: '✅ Registration successful' });
   } catch (err) {
+    if (err.code === 'ER_DUP_ENTRY') return res.status(400).json({ error: 'Phone number already registered.' });
     console.error(`[DB] Error registering user: ${err.message}`);
-    if (err.code === 'ER_DUP_ENTRY') {
-         return res.status(400).json({ error: 'Phone number already registered.' });
-    }
-    res.status(500).json({ error: `Failed to register: Database unavailable - ${err.message}` });
+    res.status(500).json({ error: `Failed to register: ${err.message}` });
+  } finally {
+    if (conn) conn.release();
   }
 });
 
+// GET /schedule - Fetch collection schedule
 app.get('/schedule', async (req, res) => {
+  let conn;
   try {
-    const conn = await dbPool.getConnection();
+    conn = await dbPool.getConnection();
     const [rows] = await conn.query('SELECT barangay, day, start_time FROM schedules');
-    conn.release();
-    console.log(`[GET /schedule] Fetched ${rows.length} schedule entries`);
     res.json(rows);
   } catch (err) {
     console.error(`[DB] Error fetching schedule: ${err.message}`);
-    res.status(500).json({ error: 'Failed to fetch schedule: Database unavailable' });
+    res.status(500).json({ error: 'Failed to fetch schedule' });
+  } finally {
+    if (conn) conn.release();
   }
 });
 
+// POST /schedule - Update collection schedule (Admin)
 app.post('/schedule', async (req, res) => {
-  // TODO: Add admin authentication check here later
+  // TODO: Add admin authentication middleware here
   const { barangay, day, start_time, updated_by } = req.body;
-  console.log(`[POST /schedule] Received data:`, { barangay, day, start_time, updated_by });
-
-  if (!barangay || !day || !start_time) return res.status(400).json({ error: 'Missing required fields' });
+  if (!barangay || !day || !start_time) return res.status(400).json({ error: 'Missing fields' });
   if (!['Tugatog', 'Acacia', 'Tinajeros'].includes(barangay)) return res.status(400).json({ error: 'Invalid barangay' });
   if (!['MON', 'TUE', 'WED', 'THU', 'FRI', 'SAT', 'SUN'].includes(day)) return res.status(400).json({ error: 'Invalid day' });
   if (!/^\d{2}:\d{2}:\d{2}$/.test(start_time)) return res.status(400).json({ error: 'Invalid time format (HH:MM:SS)' });
 
+  let conn;
   try {
-    const conn = await dbPool.getConnection();
-    await conn.query(
-      'INSERT INTO schedules (barangay, day, start_time, updated_by) VALUES (?, ?, ?, ?) ON DUPLICATE KEY UPDATE start_time = VALUES(start_time), updated_by = VALUES(updated_by)',
-      [barangay, day, start_time, updated_by || 'admin']
-    );
-    conn.release();
-    io.emit('schedule-update'); // Notify all clients
-    console.log(`[DB] Updated schedule: ${barangay}, ${day}, ${start_time}`);
-    res.json({ message: '✅ Schedule updated successfully' });
+    conn = await dbPool.getConnection();
+    await conn.query('INSERT INTO schedules (barangay, day, start_time, updated_by) VALUES (?, ?, ?, ?) ON DUPLICATE KEY UPDATE start_time = VALUES(start_time), updated_by = VALUES(updated_by)', [barangay, day, start_time, updated_by || 'admin']);
+    io.emit('schedule-update'); // Notify clients
+    res.json({ message: '✅ Schedule updated' });
   } catch (err) {
     console.error(`[DB] Error updating schedule: ${err.message}`);
-    res.status(500).json({ error: `Failed to update schedule: Database unavailable - ${err.message}` });
+    res.status(500).json({ error: `Failed to update schedule: ${err.message}` });
+  } finally {
+    if (conn) conn.release();
   }
 });
 
-// Admin registration/login (Code added from repository file)
+// POST /admin-register (Example - Keep if needed)
 app.post('/admin-register', async (req, res) => {
-  const { username, password } = req.body;
-  console.log(`[POST /admin-register] Received data:`, { username });
-  if (!username || !password) {
-    return res.status(400).json({ error: 'Missing username or password' });
-  }
-  if (username.length < 3) {
-    return res.status(400).json({ error: 'Username must be at least 3 characters' });
-  }
-  if (password.length < 8) {
-    return res.status(400).json({ error: 'Password must be at least 8 characters' });
-  }
-  try {
-    const conn = await dbPool.getConnection();
-    const [existing] = await conn.query('SELECT username FROM admins WHERE username = ?', [username]);
-    if (existing.length > 0) {
-      conn.release();
-      return res.status(400).json({ error: 'Username already exists' });
-    }
-    const hashed = await bcrypt.hash(password, 10);
-    await conn.query(
-      'INSERT INTO admins (username, password) VALUES (?, ?)',
-      [username, hashed]
-    );
-    conn.release();
-    console.log(`[DB] Registered admin: ${username}`);
-    res.json({ message: '✅ Admin registration successful' });
-  } catch (err) {
-    console.error(`[DB] Error registering admin: ${err.message}`);
-    res.status(500).json({ error: `Failed to register admin: ${err.message}` });
-  }
+  // Implement admin registration logic if required
+  res.status(501).json({ error: 'Not Implemented' });
 });
 
+// POST /admin-login (Example - Keep if needed)
 app.post('/admin-login', async (req, res) => {
-  const { username, password } = req.body;
-  console.log(`[POST /admin-login] Received data:`, { username });
-  if (!username || !password) {
-    return res.status(400).json({ error: 'Missing username or password' });
-  }
-  try {
-    const conn = await dbPool.getConnection();
-    const [rows] = await conn.query('SELECT * FROM admins WHERE username = ?', [username]);
-    conn.release();
-    if (rows.length === 0) {
-      return res.status(401).json({ error: 'Invalid username or password' });
-    }
-    const admin = rows[0];
-    const isMatch = await bcrypt.compare(password, admin.password);
-    if (!isMatch) {
-      return res.status(401).json({ error: 'Invalid username or password' });
-    }
-    console.log(`[DB] Admin login successful: ${username}`);
-    res.json({
-      message: '✅ Login successful',
-      id: admin.id,
-      username: admin.username
-    });
-  } catch (err) {
-    console.error(`[DB] Error logging in admin: ${err.message}`);
-    res.status(5500).json({ error: `Failed to login: Database unavailable - ${err.message}` });
-  }
+  // Implement admin login logic if required
+  res.status(501).json({ error: 'Not Implemented' });
 });
 
-// ETA calculation (Code added from repository file)
+// GET /eta/:truckId - Calculate estimated time of arrival (basic)
 app.get('/eta/:truckId', async (req, res) => {
   const { truckId } = req.params;
-  console.log(`[ETA] Received request for truckId: ${truckId}`);
   try {
     const lastKnown = app.locals.lastKnownLocations?.[truckId];
-    if (!lastKnown) {
-      console.warn(`[ETA] No location data for ${truckId}`);
+    if (!lastKnown?.latitude || !lastKnown?.longitude) {
       return res.status(404).json({ etaMinutes: -1, nextStop: 'Unknown', error: 'No location data' });
     }
     const { latitude, longitude } = lastKnown;
-    if (isNaN(latitude) || isNaN(longitude)) {
-      console.warn(`[ETA] Invalid coordinates for ${truckId}:`, lastKnown);
-      return res.status(500).json({ etaMinutes: -1, nextStop: 'Unknown', error: 'Invalid coordinates' });
-    }
     if (!allStreetMarkers || allStreetMarkers.length === 0) {
-      console.warn(`[ETA] No street markers loaded for ${truckId}`);
       return res.status(500).json({ etaMinutes: -1, nextStop: 'Unknown', error: 'Street markers not loaded' });
     }
     let minDistance = Infinity;
     let nextStop = null;
-    for (const street of allStreetMarkers) {
-      // Using simpler distance calculation as in the repository file
-      const distance = Math.sqrt(
-        Math.pow(latitude - street.coords[0], 2) +
-        Math.pow(longitude - street.coords[1], 2)
-      );
-      if (distance < minDistance) {
-        minDistance = distance;
-        nextStop = street.name;
-      }
-    }
-    // Very basic ETA calculation based on distance, as in the repository file
+    allStreetMarkers.forEach(street => {
+      const distance = Math.sqrt(Math.pow(latitude - street.coords[0], 2) + Math.pow(longitude - street.coords[1], 2));
+      if (distance < minDistance) { minDistance = distance; nextStop = street.name; }
+    });
     const etaMinutes = minDistance < 0.000135 ? 0 : Math.round(minDistance * 10000);
-    console.log(`[ETA] Calculated for ${truckId}: Lat=${latitude}, Lon=${longitude}, NextStop=${nextStop}, ETA=${etaMinutes}min`);
     res.json({ etaMinutes, nextStop });
   } catch (err) {
     console.error(`[ETA] Error for ${truckId}: ${err.message}`);
@@ -279,313 +210,298 @@ app.get('/eta/:truckId', async (req, res) => {
   }
 });
 
-// Statistics Endpoint
+// GET /stats/registered - Get user counts per street
 app.get('/stats/registered', async (req, res) => {
-    console.log('[GET /stats/registered] Fetching user counts per street...');
-    try {
-        const conn = await dbPool.getConnection();
-        const [rows] = await conn.query(
-            'SELECT barangay, street, COUNT(*) as count FROM users GROUP BY barangay, street ORDER BY barangay, street'
-        );
-        conn.release();
-        const stats = rows.map(row => ({
-            barangay: row.barangay,
-            street: row.street || 'Unknown Street',
-            count: row.count
-        }));
-        console.log(`[GET /stats/registered] Found stats for ${stats.length} locations.`);
-        res.json(stats);
-    } catch (err) {
-        console.error(`[DB] Error fetching registered stats: ${err.message}`);
-        res.status(500).json({ error: 'Failed to fetch statistics' });
-    }
+  let conn;
+  try {
+    conn = await dbPool.getConnection();
+    const [rows] = await conn.query('SELECT barangay, street, COUNT(*) as count FROM users GROUP BY barangay, street ORDER BY barangay, street');
+    res.json(rows.map(row => ({ ...row, street: row.street || 'N/A' })));
+  } catch (err) {
+    console.error(`[DB] Error fetching registered stats: ${err.message}`);
+    res.status(500).json({ error: 'Failed to fetch statistics' });
+  } finally {
+    if (conn) conn.release();
+  }
 });
 
-// --- Driver Registration ---
+// POST /driver-register - Register a new driver
 app.post('/driver-register', async (req, res) => {
-    const { regName: name, regPhone: phone, regBarangay: barangay, regPassword: password } = req.body;
-    console.log(`[POST /driver-register] Received data:`, { name, phone, barangay });
+  const { regName: name, regPhone: phone, regBarangay: barangay, regPassword: password } = req.body;
+  if (!name || !phone || !barangay || !password) return res.status(400).json({ error: 'Missing fields' });
+  if (!/^09\d{9}$/.test(phone)) return res.status(400).json({ error: 'Invalid phone format.' });
+  if (!['Tugatog', 'Acacia', 'Tinajeros'].includes(barangay)) return res.status(400).json({ error: 'Invalid barangay.' });
+  if (password.length < 6) return res.status(400).json({ error: 'Password too short.' });
 
-    if (!name || !phone || !barangay || !password) {
-        return res.status(400).json({ error: 'Missing required fields' });
-    }
-    if (!/^09\d{9}$/.test(phone)) {
-        return res.status(400).json({ error: 'Invalid phone number format. Must be 11 digits starting with 09.' });
-    }
-    if (!['Tugatog', 'Acacia', 'Tinajeros'].includes(barangay)) {
-         return res.status(400).json({ error: 'Invalid barangay.' });
-    }
-    if (password.length < 6) {
-        return res.status(400).json({ error: 'Password must be at least 6 characters long.' });
-    }
-
-    try {
-        const conn = await dbPool.getConnection();
-        const [existing] = await conn.query('SELECT driver_id FROM drivers WHERE phone = ?', [phone]);
-        if (existing.length > 0) {
-            conn.release();
-            return res.status(400).json({ error: 'Phone number is already registered.' });
-        }
-        const saltRounds = 10;
-        const password_hash = await bcrypt.hash(password, saltRounds);
-        await conn.query(
-            'INSERT INTO drivers (name, phone, barangay, password_hash) VALUES (?, ?, ?, ?)',
-            [name, phone, barangay, password_hash]
-        );
-        conn.release();
-        console.log(`[DB] Registered new driver: ${name}, Phone: ${phone}`);
-        res.status(201).json({ message: '✅ Driver registration successful!' });
-
-    } catch (err) {
-        console.error(`[DB] Error registering driver: ${err.message}`);
-        res.status(500).json({ error: `Driver registration failed: ${err.message}` });
-    }
+  let conn;
+  try {
+    conn = await dbPool.getConnection();
+    const [existing] = await conn.query('SELECT driver_id FROM drivers WHERE phone = ?', [phone]);
+    if (existing.length > 0) return res.status(400).json({ error: 'Phone number already registered.' });
+    const password_hash = await bcrypt.hash(password, 10);
+    await conn.query('INSERT INTO drivers (name, phone, barangay, password_hash) VALUES (?, ?, ?, ?)', [name, phone, barangay, password_hash]);
+    res.status(201).json({ message: '✅ Driver registration successful!' });
+  } catch (err) {
+    console.error(`[DB] Error registering driver: ${err.message}`);
+    res.status(500).json({ error: `Driver registration failed: ${err.message}` });
+  } finally {
+    if (conn) conn.release();
+  }
 });
 
-// --- Driver Login ---
+// POST /driver-login - Log in a driver
 app.post('/driver-login', async (req, res) => {
-    const { driverName: name, driverPassword: password } = req.body;
-    console.log(`[POST /driver-login] Attempting login for driver: ${name}`);
+  const { driverName: name, driverPassword: password } = req.body;
+  if (!name || !password) return res.status(400).json({ error: 'Missing name or password' });
 
-    if (!name || !password) {
-        return res.status(400).json({ error: 'Missing driver name or password' });
-    }
+  let conn;
+  try {
+    conn = await dbPool.getConnection();
+    const [rows] = await conn.query('SELECT driver_id, name, phone, barangay, password_hash, assigned_truck_id FROM drivers WHERE name = ?', [name]);
+    if (rows.length === 0) return res.status(401).json({ error: 'Invalid credentials' });
+    const driver = rows[0];
+    const isMatch = await bcrypt.compare(password, driver.password_hash);
+    if (!isMatch) return res.status(401).json({ error: 'Invalid credentials' });
+    res.json({
+      message: '✅ Login successful!',
+      driver: { id: driver.driver_id, name: driver.name, phone: driver.phone, barangay: driver.barangay, truckId: driver.assigned_truck_id || `Driver-Truck-${driver.driver_id}` }
+    });
+  } catch (err) {
+    console.error(`[DB] Error during driver login: ${err.message}`);
+    res.status(500).json({ error: `Login failed: ${err.message}` });
+  } finally {
+    if (conn) conn.release();
+  }
+});
 
-    try {
-        const conn = await dbPool.getConnection();
-        const [rows] = await conn.query(
-            'SELECT driver_id, name, phone, barangay, password_hash, assigned_truck_id FROM drivers WHERE name = ?',
-            [name]
-        );
-        conn.release();
-        if (rows.length === 0) {
-            console.log(`[Auth] Login failed: Driver not found - ${name}`);
-            return res.status(401).json({ error: 'Invalid credentials' });
-        }
-        const driver = rows[0];
-        const isMatch = await bcrypt.compare(password, driver.password_hash);
-        if (!isMatch) {
-            console.log(`[Auth] Login failed: Incorrect password for driver - ${name}`);
-            return res.status(401).json({ error: 'Invalid credentials' });
-        }
-        console.log(`[Auth] Login successful for driver: ${driver.name} (ID: ${driver.driver_id})`);
-        res.json({
-            message: '✅ Login successful!',
-            driver: {
-                id: driver.driver_id,
-                name: driver.name,
-                phone: driver.phone,
-                barangay: driver.barangay,
-                truckId: driver.assigned_truck_id || `Driver-Truck-${driver.driver_id}`
-            }
-        });
-    } catch (err) {
-        console.error(`[DB] Error during driver login: ${err.message}`);
-        res.status(500).json({ error: `Login failed: ${err.message}` });
+// POST /forgot-password - Handle driver password reset request
+app.post('/forgot-password', async (req, res) => {
+  const { resetPhone: phone } = req.body;
+  if (!phone || !/^09\d{9}$/.test(phone)) return res.status(400).json({ error: 'Valid phone required.' });
+
+  let conn;
+  try {
+    conn = await dbPool.getConnection();
+    const [drivers] = await conn.query('SELECT driver_id, name FROM drivers WHERE phone = ?', [phone]);
+    if (drivers.length === 0) {
+      // Don't reveal if phone exists - security best practice
+      return res.json({ message: 'If account exists, instructions sent.' });
     }
+    const driver = drivers[0];
+    const token = crypto.randomBytes(32).toString('hex');
+    const expiryMinutes = 30;
+    const expiresAt = new Date(Date.now() + expiryMinutes * 60 * 1000);
+    await conn.query('INSERT INTO password_resets (driver_id, token, expires_at) VALUES (?, ?, ?)', [driver.driver_id, token, expiresAt]);
+    conn.release(); // Release early
+
+    const resetUrl = `${req.protocol}://${req.get('host')}/reset-password?token=${token}`; // Use request host
+    const smsMessage = `Hi ${driver.name}, reset TrashTracktify password (expires ${expiryMinutes} min): ${resetUrl}`;
+    const formattedPhone = `+63${phone.slice(1)}`;
+    const mqttPayload = `batch_sms:${smsMessage} (${formattedPhone})`;
+
+    if (mqttClient?.connected) {
+      mqttClient.publish(MQTT_TOPIC, mqttPayload, (err) => {
+        if (err) console.error('[MQTT] Failed publish password reset:', err);
+        else console.log(`[MQTT] Published password reset SMS command for ${phone}`);
+      });
+    } else console.warn('[MQTT] Client not connected, password reset SMS dropped.');
+    res.json({ message: 'If account exists, instructions sent.' }); // Generic success
+  } catch (err) {
+    if (conn) conn.release();
+    console.error(`[DB] Error processing forgot password: ${err.message}`);
+    res.status(500).json({ error: 'Failed to process request.' });
+  }
+});
+
+// GET /reset-password - Serve page to enter new password
+app.get('/reset-password', async (req, res) => {
+  const { token } = req.query;
+  if (!token) return res.status(400).send('Invalid/missing token.');
+
+  let conn;
+  try {
+    conn = await dbPool.getConnection();
+    const [resets] = await conn.query('SELECT driver_id FROM password_resets WHERE token = ? AND expires_at > NOW()', [token]);
+    if (resets.length === 0) return res.status(400).send('Invalid/expired token.');
+    // Token is valid, serve the page
+    res.sendFile(path.join(__dirname, 'public', 'reset-password.html'));
+  } catch (err) {
+    console.error(`[DB] Error verifying reset token: ${err.message}`);
+    res.status(500).send('Error verifying token.');
+  } finally {
+    if (conn) conn.release();
+  }
+});
+
+// POST /reset-password - Update the password in the database
+app.post('/reset-password', async (req, res) => {
+  const { token, newPassword, confirmPassword } = req.body;
+  if (!token || !newPassword || !confirmPassword) return res.status(400).json({ error: 'Missing fields.' });
+  if (newPassword !== confirmPassword) return res.status(400).json({ error: 'Passwords do not match.' });
+  if (newPassword.length < 6) return res.status(400).json({ error: 'Password too short.' });
+
+  let conn;
+  try {
+    conn = await dbPool.getConnection();
+    await conn.beginTransaction();
+    const [resets] = await conn.query('SELECT driver_id FROM password_resets WHERE token = ? AND expires_at > NOW()', [token]);
+    if (resets.length === 0) { await conn.rollback(); return res.status(400).json({ error: 'Invalid/expired token.' }); }
+    const driverId = resets[0].driver_id;
+    const newPasswordHash = await bcrypt.hash(newPassword, 10);
+    await conn.query('UPDATE drivers SET password_hash = ? WHERE driver_id = ?', [newPasswordHash, driverId]);
+    await conn.query('DELETE FROM password_resets WHERE token = ?', [token]); // Invalidate token
+    await conn.commit();
+    res.json({ message: 'Password reset successful! You can now log in.' });
+  } catch (err) {
+    if (conn) await conn.rollback();
+    console.error(`[DB] Error resetting password: ${err.message}`);
+    res.status(500).json({ error: 'Failed to reset password.' });
+  } finally {
+    if (conn) conn.release();
+  }
 });
 // --- End API Routes ---
 
+
 // --- Socket.IO Handling ---
-app.locals.truckStats = {};
+app.locals.truckStats = {}; // Store truck status/stats in memory
+app.locals.lastKnownLocations = {}; // Store last known locations
 
 io.on('connection', (socket) => {
-  console.log(`🟢 Client connected: ${socket.id}`);
+  // socket.id used for simple tracking, not reliable across disconnects
+  // console.log(`🟢 Client connected: ${socket.id}`);
 
-  // Location Updates
+  // Location Updates from drivers/simulators
   socket.on('update-location', (data) => {
     const { latitude, longitude, truckId, source } = data;
-    if (!latitude || !longitude || !truckId) {
-      console.warn(`[Socket.IO] Invalid location data: ${JSON.stringify(data)}`);
+    // Basic validation
+    if (latitude == null || longitude == null || !truckId) {
+      // console.warn(`[Socket.IO] Invalid location data received.`);
       return;
     }
-    app.locals.lastKnownLocations = app.locals.lastKnownLocations || {};
     app.locals.lastKnownLocations[truckId] = { latitude, longitude, source, timestamp: Date.now() };
-    console.log(`[Socket.IO] Stored location for ${truckId}: Lat=${latitude}, Lon=${longitude}, Source=${source || 'unknown'}`);
+    // Broadcast location to all OTHER clients
     socket.broadcast.emit('location-update', data);
   });
 
-  // SMS Trigger Logic
-  socket.on('simulator-moved-trigger-sms', async (data) => {
-    console.log(`[Socket.IO] Received simulator-moved-trigger-sms: ${JSON.stringify(data)}`);
-    const { barangay, truckId, latitude, longitude } = data;
+  // SMS Trigger Logic (simplified example, depends on external MQTT listener)
+  socket.on('truck-at-location-trigger-sms', async (data) => {
+    const { barangay, street, truckId, lat, lon } = data;
     if (!barangay) {
-      console.warn('[Socket.IO] Missing barangay for SMS:', data);
-      return;
+        // console.warn('[SMS] Missing barangay for SMS trigger.');
+        return;
     }
+    let conn;
     try {
-      let lat = latitude;
-      let lon = longitude;
-      if (truckId && !latitude && !longitude) {
-        const lastKnown = app.locals.lastKnownLocations?.[truckId];
-        if (!lastKnown) {
-          console.warn(`[Socket.IO] No location data for truckId: ${truckId}`);
-          return;
-        }
-        lat = lastKnown.latitude;
-        lon = lastKnown.longitude;
-      }
-      if (!lat || !lon || isNaN(lat) || isNaN(lon)) {
-        console.warn(`[Socket.IO] Invalid coordinates for SMS:`, { lat, lon, truckId });
-        return;
-      }
-      if (!allStreetMarkers || allStreetMarkers.length === 0) {
-        console.warn('[Socket.IO] No street markers loaded for SMS');
-        return;
-      }
-      let minDistance = Infinity;
-      let closestStreet = 'Unknown';
-      for (const street of allStreetMarkers) {
-        if (street.barangay === barangay) {
-          const distance = Math.sqrt(
-            Math.pow(lat - street.coords[0], 2) +
-            Math.pow(lon - street.coords[1], 2)
-          );
-          if (distance < minDistance) {
-            minDistance = distance;
-            closestStreet = street.name;
-          }
-        }
-      }
+        conn = await dbPool.getConnection();
+        // Find users in the specified barangay (and optionally street)
+        // Adjust query as needed for street matching logic
+        const [users] = await conn.query('SELECT phone FROM users WHERE barangay = ?', [barangay]);
+        const phoneNumbers = users
+            .map(u => u.phone)
+            .filter(p => /^09\d{9}$/.test(p)) // Validate format
+            .map(p => `+63${p.slice(1)}`); // Format for gateway
 
-      const conn = await dbPool.getConnection();
-      const [users] = await conn.query('SELECT phone FROM users WHERE barangay = ?', [barangay]);
-      conn.release();
-      console.log(`[Socket.IO] Found ${users.length} users in ${barangay}:`, users.map(u => u.phone));
-      const phoneNumbers = users
-        .map(user => {
-          const phone = user.phone;
-          if (/^09\d{9}$/.test(phone)) {
-            return `+63${phone.slice(1)}`;
-          }
-          return null;
-        })
-        .filter(phone => phone !== null);
-      if (phoneNumbers.length === 0) {
-        console.log(`[Socket.IO] No valid phone numbers for barangay: ${barangay}`);
-        return;
-      }
-      console.log(`[Socket.IO] Sending SMS to ${phoneNumbers.length} valid users in ${barangay}: ${phoneNumbers.join(', ')}`);
-      const message = `Truck is in Brgy ${barangay}, Street: ${closestStreet}`;
-      const payload = `batch_sms:${message} (${phoneNumbers.join(',')})`;
+        if (phoneNumbers.length === 0) {
+            // console.log(`[SMS] No valid recipients found for ${barangay}.`);
+            return;
+        }
 
-      if (mqttClient.connected) {
-        mqttClient.publish(MQTT_TOPIC, payload, (err) => {
-          if (err) {
-            console.error('[MQTT] Failed to publish SMS command:', err);
-          } else {
-            console.log(`[MQTT] Published to ${MQTT_TOPIC}: ${payload.substring(0, 50)}...`);
-          }
-        });
-      } else {
-        console.warn('[MQTT] Client not connected, SMS command dropped.');
-      }
+        const locationInfo = street ? `Street: ${street}` : `nearby area (Lat: ${lat?.toFixed(4)}, Lon: ${lon?.toFixed(4)})`;
+        const message = `TrashTracktify Alert: Truck ${truckId || ''} is in Brgy ${barangay}, ${locationInfo}.`;
+        const mqttPayload = `batch_sms:${message} (${phoneNumbers.join(',')})`;
+
+        if (mqttClient?.connected) {
+            mqttClient.publish(MQTT_TOPIC, mqttPayload, (err) => {
+                if (err) console.error('[MQTT] Failed publish SMS command:', err);
+                // else console.log(`[MQTT] Published SMS command for ${barangay}`);
+            });
+        } else {
+            console.warn('[MQTT] Client not connected, SMS command dropped.');
+        }
 
     } catch (err) {
-      console.error(`[Socket.IO] Error processing SMS for ${barangay}: ${err.message}`);
+        console.error(`[SMS] Error processing SMS trigger for ${barangay}: ${err.message}`);
+    } finally {
+        if (conn) conn.release();
     }
   });
 
-  socket.on('truck-at-location-trigger-sms', async (data) => { /* ... similar logic as simulator-moved ... */ });
 
-  // Driver Status Listeners
+  // Driver Status Updates
   socket.on('driver:tracking_started', (data) => {
-      if (!data || !data.truckId) return;
-      console.log(`[Socket.IO] Truck ${data.truckId} started tracking.`);
-      app.locals.truckStats[data.truckId] = {
-          ...(app.locals.truckStats[data.truckId] || {}),
-          statusText: 'Active',
-          startTime: Date.now(),
-          percentFull: app.locals.truckStats[data.truckId]?.percentFull || 0
-      };
-      io.emit('truck-status', { truckId: data.truckId, statusText: 'Active', percentFull: app.locals.truckStats[data.truckId].percentFull });
-      if (app.locals.truckStats[data.truckId]?.roundTrips !== undefined) {
-         io.emit('round-trip', { truckId: data.truckId, count: app.locals.truckStats[data.truckId].roundTrips });
-      }
+    if (!data?.truckId) return;
+    const truckId = data.truckId;
+    app.locals.truckStats[truckId] = {
+        ...(app.locals.truckStats[truckId] || { roundTrips: 0 }),
+        statusText: 'Active',
+        startTime: Date.now(),
+        percentFull: app.locals.truckStats[truckId]?.percentFull || 0 // Persist percentFull
+    };
+    io.emit('truck-status', { truckId, statusText: 'Active', percentFull: app.locals.truckStats[truckId].percentFull });
+    // Emit current trip count if known
+    if (app.locals.truckStats[truckId]?.roundTrips !== undefined) {
+       io.emit('round-trip', { truckId, count: app.locals.truckStats[truckId].roundTrips });
+    }
   });
 
   socket.on('driver:tracking_stopped', (data) => {
-      if (!data || !data.truckId) return;
-      console.log(`[Socket.IO] Truck ${data.truckId} stopped tracking.`);
-       if (app.locals.truckStats[data.truckId]) {
-           app.locals.truckStats[data.truckId].statusText = 'Inactive';
-           app.locals.truckStats[data.truckId].startTime = null;
-       }
-      io.emit('truck-status', { truckId: data.truckId, statusText: 'Inactive' });
+    if (!data?.truckId) return;
+    const truckId = data.truckId;
+    if (app.locals.truckStats[truckId]) {
+        app.locals.truckStats[truckId].statusText = 'Inactive';
+        app.locals.truckStats[truckId].startTime = null; // Clear start time
+    }
+    io.emit('truck-status', { truckId, statusText: 'Inactive' });
   });
 
-  // --- THIS IS THE FIX ---
-  // Modify this handler to only count trips when percentage goes from >=100 to 0.
   socket.on('driver:load_update', (data) => {
-      if (!data || data.truckId === undefined || data.percentFull === undefined) return;
-      console.log(`[Socket.IO] Received load update for ${data.truckId}: ${data.percentFull}%`);
+    if (data?.truckId === undefined || data?.percentFull === undefined) return;
+    const { truckId, percentFull, timestamp } = data;
+    const currentStats = app.locals.truckStats[truckId] || { roundTrips: 0, statusText: 'Active' };
+    const oldPercent = currentStats.percentFull;
 
-      // Get the current stats *before* updating
-      const currentStats = app.locals.truckStats[data.truckId] || { roundTrips: 0, statusText: 'Active' };
-      const oldPercent = currentStats.percentFull; // Store the old percentage
+    app.locals.truckStats[truckId] = {
+        ...currentStats,
+        percentFull: percentFull,
+        lastLoadUpdate: timestamp || Date.now()
+    };
+    io.emit('truck-status', { truckId, percentFull });
 
-      // Update the stats object with the new percentage
-      app.locals.truckStats[data.truckId] = {
-         ...currentStats,
-         percentFull: data.percentFull,
-         lastLoadUpdate: data.timestamp || Date.now()
-      };
-
-      // Emit the new status to all clients
-      io.emit('truck-status', { truckId: data.truckId, percentFull: data.percentFull });
-
-      // --- NEW LOGIC ---
-      if (data.percentFull >= 100) {
-          // Truck is full, just emit the full event
-          io.emit('truck-full', { truckId: data.truckId, percentFull: 100 });
-      
-      } else if (data.percentFull === 0) {
-          // This is the "Finished Emptying" signal
-          
-          // Check if the *previous* state was full (e.g., >= 100)
-          // This prevents adding a trip count just for starting at 0
-          if (oldPercent >= 100) { 
-              app.locals.truckStats[data.truckId].roundTrips = (app.locals.truckStats[data.truckId].roundTrips || 0) + 1;
-              io.emit('round-trip', { truckId: data.truckId, count: app.locals.truckStats[data.truckId].roundTrips });
-              console.log(`[Stats] Incremented round trips for ${data.truckId} to ${app.locals.truckStats[data.truckId].roundTrips} (on empty)`);
-          }
-          
-          // Reset start time for the new trip
-          app.locals.truckStats[data.truckId].startTime = Date.now();
-      }
-      // --- END NEW LOGIC ---
+    // Trip counting logic
+    if (percentFull >= 100) {
+        io.emit('truck-full', { truckId, percentFull: 100 });
+    } else if (percentFull === 0 && oldPercent >= 100) { // Count trip when going from full to empty
+        app.locals.truckStats[truckId].roundTrips = (currentStats.roundTrips || 0) + 1;
+        io.emit('round-trip', { truckId, count: app.locals.truckStats[truckId].roundTrips });
+        console.log(`[Stats] Trip count ${truckId}: ${app.locals.truckStats[truckId].roundTrips}`);
+        app.locals.truckStats[truckId].startTime = Date.now(); // Reset timer for next trip
+    }
   });
-  // --- END FIX ---
 
-  // Registered Stats Update Trigger
+  // Registered Stats Update Trigger (e.g., after successful registration)
   socket.on('registered-stats-update', async () => {
-       console.log('[Socket.IO] Triggering registered stats refresh (event received).');
-       try {
-          const conn = await dbPool.getConnection();
-          const [rows] = await conn.query(
-              'SELECT barangay, street, COUNT(*) as count FROM users GROUP BY barangay, street ORDER BY barangay, street'
-          );
-          conn.release();
-          const stats = rows.map(row => ({
-              barangay: row.barangay,
-              street: row.street || 'Unknown Street',
-              count: row.count
-          }));
-          io.emit('registered-stats', stats);
-       } catch (err) {
-           console.error('[Socket.IO] Error fetching/emitting updated stats:', err);
-       }
+     let conn;
+     try {
+        conn = await dbPool.getConnection();
+        const [rows] = await conn.query('SELECT barangay, street, COUNT(*) as count FROM users GROUP BY barangay, street ORDER BY barangay, street');
+        io.emit('registered-stats', rows.map(r => ({ ...r, street: r.street || 'N/A' })));
+     } catch (err) {
+         console.error('[Socket.IO] Error fetching/emitting updated stats:', err.message);
+     } finally {
+        if (conn) conn.release();
+     }
   });
 
-  // Schedule Updates
+  // Schedule Updates Trigger (e.g., after successful schedule save)
   socket.on('schedule-update', () => {
-      console.log('[Socket.IO] schedule-update event received, broadcasting...');
+      // Broadcast to all clients except the sender (if needed, otherwise io.emit)
       socket.broadcast.emit('schedule-update');
   });
 
-  // Disconnect
+  // Disconnect Handler
   socket.on('disconnect', () => {
-    console.log(`[Socket.IO] Client disconnected: ${socket.id}`);
+    // console.log(`Client disconnected: ${socket.id}`);
   });
 });
 // --- End Socket.IO Handling ---
@@ -594,3 +510,4 @@ io.on('connection', (socket) => {
 server.listen(port, () => {
   console.log(`🚀 Server running at http://localhost:${port}`);
 });
+
