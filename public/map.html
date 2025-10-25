@@ -1,0 +1,63 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <title>Trashtrackify — Map</title>
+  <meta name="viewport" content="width=device-width,initial-scale=1" />
+  <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
+  <link rel="stylesheet" href="css/map.css" />
+</head>
+<body>
+  <!-- Top nav -->
+  <header class="top-nav" role="banner">
+    <div class="top-nav-inner">
+      <div class="brand">
+        <img src="img/garbage-truck.png" alt="" aria-hidden="true">
+        <span class="app-title">TrashTracktify</span>
+      </div>
+    </div>
+  </header>
+
+  <!-- Main content -->
+  <main id="content">
+    <div class="map-wrapper">
+      <div id="map" role="application" aria-label="Map showing truck locations"></div>
+
+      <!-- Truck status overlay -->
+      <aside class="truck-status" id="truckStatus" aria-live="polite" aria-atomic="true">
+        <div class="truck-status-card">
+          <div class="ts-title">Truck Status</div>
+          <div class="ts-body">
+            <svg class="progress-ring" viewBox="0 0 36 36" width="84" height="84" aria-hidden="true">
+              <circle class="bg" cx="18" cy="18" r="16" stroke-width="4" fill="none"></circle>
+              <circle class="fg" cx="18" cy="18" r="16" stroke-width="4" fill="none" stroke-linecap="round" stroke-dasharray="100 100" stroke-dashoffset="100"></circle>
+            </svg>
+            <div class="ts-text">
+              <div id="tsPercent">0%</div>
+              <div id="tsState">Initializing...</div>
+            </div>
+          </div>
+        </div>
+      </aside>
+
+      <!-- Center locate button -->
+      <button id="centerBtn" class="center-btn" title="Center on truck" aria-label="Center map">📍</button>
+    </div>
+  </main>
+
+  <!-- Bottom navigation (Map active) -->
+  <nav class="bottom-nav" role="navigation" aria-label="Main navigation">
+    <a class="nav-item active" href="map.html" aria-current="page">
+      <img src="img/map.png" alt="">
+    </a>
+
+    <a class="nav-item" href="schedule.html">
+      <img src="img/cal.png" alt="">
+    </a>
+  </nav>
+
+  <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+  <script src="https://cdn.socket.io/4.7.2/socket.io.min.js"></script>
+  <script src="js/map.js"></script>
+</body>
+</html>

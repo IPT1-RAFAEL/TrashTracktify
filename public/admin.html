@@ -1,114 +1,121 @@
 <!doctype html>
 <html lang="en">
->
 <head>
   <meta charset="utf-8" />
+  <title>TrashTracktify — Admin</title>
   <meta name="viewport" content="width=device-width,initial-scale=1" />
-  <title>Admin Dashboard | Garbage Truck Monitor</title>
-  <link rel="stylesheet" href="https://unpkg.com/leaflet/dist/leaflet.css" />
-  <link rel="stylesheet" href="css/admin.css" />
+  <link rel="stylesheet" href="css/ad.css" />
+  <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
+  <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
 </head>
 <body>
-  <div class="container">
-    <div class="topbar">
-      <div class="left"><b>ADMIN DASHBOARD</b></div>
-      <div class="right">
-        <button id="adminLoginBtn" class="pill">LOGIN</button>
-        <button id="adminLogoutBtn" class="pill" style="display:none;">LOGOUT</button>
-      </div>
+  <header class="top-nav">
+    <div class="brand">
+      <img src="img/garbage-truck.png" alt="logo" class="brand-icon">
+      <span class="brand-title">TrashTracktify</span>
     </div>
+  </header>
 
-    <div class="map-container">
-      <div id="map"></div>
-    </div>
-
-    <div class="schedule">
+  <main class="main-content">
+    <!-- Schedule / Barangays -->
+    <section class="schedule">
       <h1>Barangay Schedule</h1>
-      <div class="barangays">
-        <div class="barangay-card" data-name="Tugatog">
-          <h2>Tugatog</h2>
-          <img src="calendar-icon.png" class="calendar-icon" data-brgy="Tugatog">
-          <div id="Tugatog-days" class="days"></div>
+
+      <div class="container-grid">
+        <div class="left-col">
+          <div class="barangays" id="barangayList">
+            <!-- populated by JS -->
+            <div class="barangay template" style="display:none">
+              <h2>Sample</h2>
+              <div class="days"></div>
+            </div>
+          </div>
+
+          <!-- Calendar (same style as schedule page) -->
+          <div class="calendar-card admin-calendar">
+            <div class="calendar-header"><div id="monthLabel">Month</div></div>
+            <div class="dow-row">
+              <div class="dow">SUN</div><div class="dow">MON</div><div class="dow">TUE</div>
+              <div class="dow">WED</div><div class="dow">THU</div><div class="dow">FRI</div><div class="dow">SAT</div>
+            </div>
+            <div id="calendarBody" class="month-grid"></div>
+          </div>
         </div>
 
-        <div class="barangay-card" data-name="Acacia">
-          <h2>Acacia</h2>
-          <img src="calendar-icon.png" class="calendar-icon" data-brgy="Acacia">
-          <div id="Acacia-days" class="days"></div>
-        </div>
-
-        <div class="barangay-card" data-name="Tinajeros">
-          <h2>Tinajeros</h2>
-          <img src="calendar-icon.png" class="calendar-icon" data-brgy="Tinajeros">
-          <div id="Tinajeros-days" class="days"></div>
+        <div class="right-col">
+  <div class="status-widgets">
+    <div class="truck-status-card">
+      <div class="ts-title">Truck Status</div>
+      <div class="ts-body">
+        <svg class="progress-ring" viewBox="0 0 36 36" width="84" height="84" aria-hidden="true">
+          <circle class="bg" cx="18" cy="18" r="16" stroke-width="4" fill="none"></circle>
+          <circle class="fg" cx="18" cy="18" r="16" stroke-width="4" fill="none"
+                  stroke-linecap="round" stroke-dasharray="100 100" stroke-dashoffset="100"></circle>
+        </svg>
+        <div class="ts-text">
+          <div id="tsPercent">0%</div>
+          <div id="tsState">Initializing...</div>
         </div>
       </div>
+    </div>
 
-      <hr/>
+    <!-- Trip counter box beside -->
+    <div class="trip-card">
+      <div class="trip-title">Trip Counter</div>
+      <div id="roundCount" class="trip-value">0</div>
+    </div>
+  </div>
+</div>
 
-      <section class="residents-section">
-        <h3>Registered Residents</h3>
-        <div class="residents-wrapper">
-          <table id="residentsTable">
-            <thead>
-              <tr><th>ID</th><th>Name</th><th>Phone</th><th>Barangay</th></tr>
-            </thead>
-            <tbody></tbody>
-          </table>
-        </div>
-      </section>
+
+
+          <!-- Registered residents table -->
+  <!-- Moved table here -->
+  <div class="residents-card">
+    <h3 class="res-title">Registered Residents</h3>
+    <div class="table-wrap">
+      <table id="residentTable" class="res-table">
+        <thead>
+          <tr>
+            <th>ID</th><th>Name</th><th>Phone</th><th>Barangay</th><th>Street</th>
+          </tr>
+        </thead>
+        <tbody></tbody>
+      </table>
     </div>
   </div>
 
-  <!-- LOGIN MODAL -->
-  <div id="loginModal" class="modal-overlay">
-    <div class="modal-card small">
-      <h3>Admin Login</h3>
-      <label>Username <input id="loginUser" type="text"></label>
-      <label>Password <input id="loginPass" type="password"></label>
-      <div id="loginMsg" class="msg"></div>
-      <div class="modal-actions">
-        <button id="loginSubmit" class="btn">Login</button>
-        <button id="showRegister" class="btn ghost">Register</button>
+        </div>
       </div>
-    </div>
-  </div>
+    </section>
+  </main>
 
-  <!-- REGISTER MODAL -->
-  <div id="registerModal" class="modal-overlay">
-    <div class="modal-card small">
-      <h3>Register Admin</h3>
-      <label>Username <input id="regUser" type="text"></label>
-      <label>Password <input id="regPass" type="password"></label>
-      <div id="regMsg" class="msg"></div>
-      <div class="modal-actions">
-        <button id="regSubmit" class="btn">Register</button>
-        <button id="showLogin" class="btn ghost">Back to Login</button>
-      </div>
-    </div>
-  </div>
+  <!-- edit schedule popup -->
+  <div id="editSchedulePopup" class="edit-popup" aria-hidden="true">
+    <div class="popup-card">
+      <h3>Edit Barangay Schedule</h3>
+      <p><strong id="editBarangay"></strong> — <span id="editDay"></span></p>
 
-  <!-- EDIT SCHEDULE POPUP -->
-  <div id="editSchedulePopup" class="modal-overlay">
-    <div class="modal-card small">
-      <h3>Edit Schedule</h3>
-      <div><strong>Barangay:</strong> <span id="editBarangay"></span></div>
-      <div><strong>Day:</strong> <span id="editDay"></span></div>
       <form id="editScheduleForm">
-        <label>Start time:
-          <input name="start_time" type="time" required />
-        </label>
+        <label for="editTime">New Start Time</label>
+        <input name="start_time" id="editTime" type="time" required>
+
         <div id="editMsg" class="msg"></div>
-        <div class="modal-actions">
-          <button type="submit" class="btn">Save</button>
-          <button type="button" class="btn ghost" onclick="document.getElementById('editSchedulePopup').classList.remove('show')">Cancel</button>
+
+        <div class="popup-actions">
+          <button type="submit" class="btn save-btn">Save</button>
+          <button type="button" class="btn cancel-btn" id="cancelEditBtn">Cancel</button>
         </div>
       </form>
     </div>
   </div>
 
-  <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+  <nav class="bottom-nav">
+    <a href="admap.html" class="nav-item"><img src="img/map.png" alt="map"></a>
+    <a href="admin.html" class="nav-item active"><img src="img/admin.png" alt="admin"></a>
+  </nav>
+
   <script src="https://cdn.socket.io/4.7.2/socket.io.min.js"></script>
-  <script src="js/admin.js"></script>
+  <script src="js/adstats.js"></script>
 </body>
 </html>

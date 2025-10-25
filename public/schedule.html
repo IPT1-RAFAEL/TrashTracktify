@@ -1,0 +1,130 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <title>Trashtrackify — Schedule</title>
+  <meta name="viewport" content="width=device-width,initial-scale=1" />
+  <link rel="stylesheet" href="css/regi.css" />
+</head>
+<body>
+  <!-- Top bar / thin header to mimic app chrome -->
+  <header class="top-bar">
+    <div class="top-inner">
+      <div class="brand">
+        <img src="img/garbage-truck.png" alt="" class="logo">
+        <span class="app-title">TrashTracktify</span>
+      </div>
+    </div>
+  </header>
+
+  <main id="content">
+    <div class="container">
+
+      <!-- TOP: Date / Barangay / Day / Time (single row) -->
+      <section class="top-info" aria-hidden="false">
+        <div class="date-main" id="topDate">—</div>
+        <div class="meta">
+          <div class="meta-item"><span class="label">Barangay</span><div id="topBarangay">Not registered</div></div>
+          <div class="meta-item"><span class="label">Day</span><div id="topDay">—</div></div>
+          <div class="meta-item"><span class="label">Time</span><div id="topTime">—</div></div>
+        </div>
+      </section>
+
+      <!-- Calendar area -->
+      <section class="calendar-card" aria-label="Month calendar">
+        <div class="calendar-header">
+          <div id="monthLabel"></div>
+        </div>
+
+        <div class="calendar-grid">
+          <div class="dow-row">
+            <div class="dow">SUN</div>
+            <div class="dow">MON</div>
+            <div class="dow">TUE</div>
+            <div class="dow">WED</div>
+            <div class="dow">THU</div>
+            <div class="dow">FRI</div>
+            <div class="dow">SAT</div>
+          </div>
+
+          <div id="calendarBody" class="month-grid"></div>
+        </div>
+      </section>
+
+      <!-- Bottom info area: barangay registration button -->
+      <section class="bottom-controls">
+        <div class="barangay-display">
+          <strong>Registered:</strong> <span id="savedBarangay">Not registered</span>
+        </div>
+        <button id="openRegister" class="primary-btn">Register</button>
+      </section>
+
+    </div>
+  </main>
+
+  <!-- Bottom navigation (same as map page) -->
+  <nav class="bottom-nav" aria-label="Main navigation">
+    <a class="nav-item" href="map.html">
+      <img src="img/map.png" alt="Map">
+    </a>
+    <a class="nav-item active" href="schedule.html">
+      <img src="img/cal.png" alt="Schedule">
+    </a>
+  </nav>
+
+  <!-- Register popup (keeps your form) -->
+  <div id="registerPopup" class="popup" aria-hidden="true">
+    <div class="popup-content register">
+      <img src="img/garbage-truck.png" alt="Truck" class="popup-icon">
+      <h1>Trashtrackify</h1>
+      <h3>Register</h3>
+      <form id="popupForm">
+        <input type="text" name="name" placeholder="Name" autocomplete="name" required>
+        <input type="text" name="phone" placeholder="Number (09123456789)" autocomplete="tel" required>
+        <select name="barangay" required>
+          <option value="">Select Barangay</option>
+          <option value="Tugatog">Tugatog</option>
+          <option value="Acacia">Acacia</option>
+          <option value="Tinajeros">Tinajeros</option>
+        </select>
+        <select name="street" id="streetSelect" required disabled>
+          <option value="" disabled selected>Select Barangay First</option>
+        </select>
+        <button type="submit">Done</button>
+        <div class="msg" id="popupMsg"></div>
+      </form>
+    </div>
+  </div>
+  <!-- Date-cell detail popup (for calendar clicks) -->
+  <div id="datePopup" class="popup small-popup" aria-hidden="true">
+    <div class="popup-content small">
+      <h3 id="datePopupTitle">Date</h3>
+      <div id="datePopupBody">Loading...</div>
+    </div>
+  </div>
+
+  <script src="https://cdn.socket.io/4.7.2/socket.io.min.js"></script>
+  <script src="js/register.js"></script>
+  <script>
+    /* Minimal UI wiring for popups and calendar click -> uses functions added to register.js */
+    // register.js will expose: generateCalendar, showDateDetails, initTopInfo, displayBarangay
+    document.addEventListener('DOMContentLoaded', ()=> {
+      if (typeof initTopInfo === 'function') initTopInfo(); // sets top date/day/time and saved barangay
+      if (typeof generateCalendar === 'function') generateCalendar(); // build static calendar
+      if (typeof displayBarangay === 'function') displayBarangay();
+
+      // register popup controls (open/close)
+      const popup = document.getElementById('registerPopup');
+      const openBtn = document.getElementById('openRegister');
+      const closeBtn = document.getElementById('closePopup');
+      openBtn.addEventListener('click', ()=> popup.classList.add('show'));
+      closeBtn.addEventListener('click', ()=> popup.classList.remove('show'));
+      popup.addEventListener('click', (e)=> { if (e.target === popup) popup.classList.remove('show'); });
+
+      const datePopup = document.getElementById('datePopup');
+      document.getElementById('closeDatePopup').addEventListener('click', ()=> datePopup.classList.remove('show'));
+      datePopup.addEventListener('click', (e)=> { if (e.target === datePopup) datePopup.classList.remove('show'); });
+    });
+  </script>
+</body>
+</html>
