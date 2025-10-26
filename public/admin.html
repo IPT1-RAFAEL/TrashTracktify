@@ -8,30 +8,30 @@
   <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
   <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
 </head>
-<body>
-  <header class="top-nav">
+<body class="locked"> <header class="top-nav">
     <div class="brand">
       <img src="img/garbage-truck.png" alt="logo" class="brand-icon">
       <span class="brand-title">TrashTracktify</span>
     </div>
+    <div class="top-actions">
+      <button id="adminLoginHeaderBtn" class="icon-btn" style="display:none;">Login</button>
+      <button id="adminLogoutBtn" class="icon-btn" style="display:none;">Logout</button>
+    </div>
   </header>
 
   <main class="main-content">
-    <!-- Schedule / Barangays -->
     <section class="schedule">
       <h1>Barangay Schedule</h1>
 
       <div class="container-grid">
         <div class="left-col">
           <div class="barangays" id="barangayList">
-            <!-- populated by JS -->
             <div class="barangay template" style="display:none">
               <h2>Sample</h2>
               <div class="days"></div>
             </div>
           </div>
 
-          <!-- Calendar (same style as schedule page) -->
           <div class="calendar-card admin-calendar">
             <div class="calendar-header"><div id="monthLabel">Month</div></div>
             <div class="dow-row">
@@ -43,54 +43,47 @@
         </div>
 
         <div class="right-col">
-  <div class="status-widgets">
-    <div class="truck-status-card">
-      <div class="ts-title">Truck Status</div>
-      <div class="ts-body">
-        <svg class="progress-ring" viewBox="0 0 36 36" width="84" height="84" aria-hidden="true">
-          <circle class="bg" cx="18" cy="18" r="16" stroke-width="4" fill="none"></circle>
-          <circle class="fg" cx="18" cy="18" r="16" stroke-width="4" fill="none"
-                  stroke-linecap="round" stroke-dasharray="100 100" stroke-dashoffset="100"></circle>
-        </svg>
-        <div class="ts-text">
-          <div id="tsPercent">0%</div>
-          <div id="tsState">Initializing...</div>
-        </div>
-      </div>
-    </div>
+          <div class="status-widgets">
+            <div class="truck-status-card">
+              <div class="ts-title">Truck Status</div>
+              <div class="ts-body">
+                <svg class="progress-ring" viewBox="0 0 36 36" width="84" height="84" aria-hidden="true">
+                  <circle class="bg" cx="18" cy="18" r="16" stroke-width="4" fill="none"></circle>
+                  <circle class="fg" cx="18" cy="18" r="16" stroke-width="4" fill="none"
+                          stroke-linecap="round" stroke-dasharray="100 100" stroke-dashoffset="100"></circle>
+                </svg>
+                <div class="ts-text">
+                  <div id="tsPercent">0%</div>
+                  <div id="tsState">Initializing...</div>
+                </div>
+              </div>
+            </div>
 
-    <!-- Trip counter box beside -->
-    <div class="trip-card">
-      <div class="trip-title">Trip Counter</div>
-      <div id="roundCount" class="trip-value">0</div>
-    </div>
-  </div>
-</div>
+            <div class="trip-card">
+              <div class="trip-title">Trip Counter</div>
+              <div id="roundCount" class="trip-value">0</div>
+            </div>
+          </div>
 
-
-
-          <!-- Registered residents table -->
-  <!-- Moved table here -->
-  <div class="residents-card">
-    <h3 class="res-title">Registered Residents</h3>
-    <div class="table-wrap">
-      <table id="residentTable" class="res-table">
-        <thead>
-          <tr>
-            <th>ID</th><th>Name</th><th>Phone</th><th>Barangay</th><th>Street</th>
-          </tr>
-        </thead>
-        <tbody></tbody>
-      </table>
-    </div>
-  </div>
+          <div class="residents-card">
+            <h3 class="res-title">Registered Residents</h3>
+            <div class="table-wrap">
+              <table id="residentTable" class="res-table">
+                <thead>
+                  <tr>
+                    <th>ID</th><th>Name</th><th>Phone</th><th>Barangay</th><th>Street</th>
+                  </tr>
+                </thead>
+                <tbody></tbody>
+              </table>
+            </div>
+          </div>
 
         </div>
       </div>
     </section>
   </main>
 
-  <!-- edit schedule popup -->
   <div id="editSchedulePopup" class="edit-popup" aria-hidden="true">
     <div class="popup-card">
       <h3>Edit Barangay Schedule</h3>
@@ -109,6 +102,74 @@
       </form>
     </div>
   </div>
+
+  <div id="adminLoginPopup" class="popup show"> <div class="popup-content">
+      <img src="img/admin.png" alt="Admin Icon" class="popup-icon">
+      <h1>Admin Login</h1>
+      <form id="adminLoginForm">
+        <input type="text" id="adminName" name="adminName" placeholder="Admin Name" required autocomplete="username">
+        <input type="password" id="adminPassword" name="adminPassword" placeholder="Password" required autocomplete="current-password">
+        <button type="submit" id="adminLoginBtn" class="primary-btn">Login</button>
+        <div class="popup-links">
+          <button type="button" class="link-btn" id="showAdminRegisterBtn">Register New Admin</button>
+          <button type="button" class="link-btn" id="showAdminForgotBtn">Forgot Password?</button>
+        </div>
+        <div id="adminLoginMsg" class="msg"></div>
+      </form>
+    </div>
+  </div>
+
+  <div id="adminRegisterPopup" class="popup">
+    <div class="popup-content">
+       <img src="img/admin.png" alt="Admin Icon" class="popup-icon">
+       <h1>Admin Registration</h1>
+       <form id="adminRegisterForm">
+         <input type="text" id="regAdminName" name="regName" placeholder="Full Name" required autocomplete="name">
+         <input type="tel" id="forgotAdminPhone" name="resetPhone" placeholder="Phone (09xxxxxxxxx)" required autocomplete="tel" pattern="09[0-9]{9}">
+         <input type="password" id="regAdminPassword" name="regPassword" placeholder="Create Password (min 6 chars)" required autocomplete="new-password" minlength="6">
+         <button type="submit" id="adminRegisterBtn" class="primary-btn">Register</button>
+         <div class="popup-links">
+           <button type="button" class="link-btn" id="backToLoginFromRegister">Back to Login</button>
+         </div>
+         <div id="adminRegisterMsg" class="msg"></div>
+       </form>
+    </div>
+  </div>
+
+  <div id="adminForgotPasswordPopup" class="popup">
+     <div class="popup-content">
+       <img src="img/admin.png" alt="Admin Icon" class="popup-icon">
+       <h1>Reset Password</h1>
+       <form id="adminForgotPasswordForm">
+         <p class="desc">Enter your phone number to receive a reset code via SMS.</p>
+         <input type="tel" id="forgotAdminPhone" name="resetPhone" placeholder="Phone (09xxxxxxxxx)" required autocomplete="tel" pattern="09[0-9]{9}">
+         <button type="submit" id="sendAdminResetBtn" class="primary-btn">Send Reset Link</button>
+         <div class="popup-links">
+            <button type="button" class="link-btn" id="backToLoginFromForgot">Back to Login</button>
+         </div>
+         <div id="adminForgotMsg" class="msg"></div>
+       </form>
+     </div>
+   </div>
+
+   <div id="adminResetPasswordPopup" class="popup">
+  <div class="popup-content">
+    <img src="img/admin.png" alt="Admin Icon" class="popup-icon">
+    <h1>Reset Admin Password</h1>
+    <form id="adminResetPasswordForm">
+      <p class="desc">Enter the 6-digit code sent to your phone and your new password.</p>
+      <input type="tel" id="resetAdminPhone" name="phone" placeholder="Phone (09xxxxxxxxx)" required autocomplete="tel" pattern="09[0-9]{9}">
+      <input type="text" id="resetCode" name="code" placeholder="6-digit code" required pattern="\d{6}">
+      <input type="password" id="resetNewPassword" name="newPassword" placeholder="New Password (min 6 chars)" required autocomplete="new-password" minlength="6">
+      <input type="password" id="resetConfirmPassword" name="confirmPassword" placeholder="Confirm New Password" required autocomplete="new-password" minlength="6">
+      <button type="submit" id="submitAdminResetBtn" class="primary-btn">Reset Password</button>
+      <div class="popup-links">
+        <button type="button" class="link-btn" id="backToLoginFromReset">Back to Login</button>
+      </div>
+      <div id="adminResetMsg" class="msg"></div>
+    </form>
+  </div>
+</div>
 
   <nav class="bottom-nav">
     <a href="admap.html" class="nav-item"><img src="img/map.png" alt="map"></a>

@@ -1,7 +1,6 @@
 const socket = io("https://trashtracktify.onrender.com");
-// const socket = io("http://localhost:3000");
 
-let map = null; // Initialize map later
+let map = null;
 
 // Initialize map as soon as the container is ready
 document.addEventListener('DOMContentLoaded', () => {
@@ -152,7 +151,6 @@ socket.on("location-update", (data) => {
         marker = L.marker(newLatLng, { icon: truckIcon }).addTo(map);
         marker.bindPopup(`<b>${truckId}</b><br>Loading ETA...`);
         truckMarkers[truckId] = marker;
-        // Also reset path for this truck if marker was missing
         truckPaths[truckId] = [];
         if (truckPathLayers[truckId] && map.hasLayer(truckPathLayers[truckId])) {
            map.removeLayer(truckPathLayers[truckId]);
@@ -163,7 +161,7 @@ socket.on("location-update", (data) => {
 
   // --- NEW: Add coordinate to path and update line ---
   if (!truckPaths[truckId]) {
-      truckPaths[truckId] = []; // Initialize array if first time for this truck
+      truckPaths[truckId] = [];
   }
   // Add the new coordinate
   truckPaths[truckId].push(newLatLng);
@@ -190,7 +188,6 @@ socket.on("truck-status", (status) => {
 // When a truck marker is created/updated, attempt to fetch ETA for that truck (debounced)
 function requestETA(truckId, latitude, longitude){
   if (!truckId) return;
-  // Ensure map is ready before proceeding
   if (!map) return;
   
   const controller = new AbortController();
@@ -203,7 +200,7 @@ function requestETA(truckId, latitude, longitude){
     })
     .then(etaData => {
       const marker = truckMarkers[truckId];
-      if (!marker || !map.hasLayer(marker)) return; // Check if marker exists and is on map
+      if (!marker || !map.hasLayer(marker)) return;
 
       let etaText = 'ETA Unknown';
       if (etaData && etaData.etaMinutes !== undefined) {
@@ -219,7 +216,7 @@ function requestETA(truckId, latitude, longitude){
       clearTimeout(timeoutId);
       console.error('Error fetching ETA', err);
       const marker = truckMarkers[truckId];
-      if (!marker || !map.hasLayer(marker)) return; // Check again
+      if (!marker || !map.hasLayer(marker)) return; 
 
       const msg = err.name === 'AbortError' ? 'ETA request timed out' : 'Could not fetch ETA';
       marker.setPopupContent(`<b>${truckId}</b><br>Lat: ${latitude.toFixed(6)}, Lon: ${longitude.toFixed(6)}<br>${msg}`);
@@ -240,9 +237,8 @@ socket.on("location-update", (data) => {
 
 // center button behavior
 const centerBtn = document.getElementById('centerBtn');
-if (centerBtn) { // Add check in case element doesn't exist
+if (centerBtn) {
     centerBtn.addEventListener('click', () => {
-      // Ensure map exists before trying to use it
       if (!map) return;
       
       if (lastTruckLocation) {
@@ -252,15 +248,12 @@ if (centerBtn) { // Add check in case element doesn't exist
           map.setView([pos.coords.latitude, pos.coords.longitude], 15, { animate: true });
         }, err => {
           console.warn('Geolocation failed', err);
-          // Fallback: center on default view if geolocation fails
            map.setView([14.667, 120.967], 15);
         }, { timeout: 8000 });
       } else {
-           // Fallback if no last location and no geolocation
            map.setView([14.667, 120.967], 15);
       }
     });
-     // small accessibility: allow keyboard to focus center button
     centerBtn.tabIndex = 0;
 }
 
@@ -273,12 +266,9 @@ document.head.appendChild(style);
 
 // When the socket disconnects/reconnects update status ring
 socket.on('connect', () => {
-  setTruckStatus(100, 'Connected'); // Assuming status applies globally or needs reset logic
+  setTruckStatus(100, 'Connected'); 
   setTimeout(()=> setTruckStatus(0,'Initializing...'), 1200);
-  // We might need to re-fetch initial state or clear paths on reconnect?
 });
 socket.on('disconnect', () => {
   setTruckStatus(0, 'Disconnected');
-  // Clear paths or show an indication that data might be stale?
-  // For now, paths will remain as they were.
 });

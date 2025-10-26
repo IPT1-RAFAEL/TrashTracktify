@@ -7,16 +7,15 @@
   <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
   <link rel="stylesheet" href="css/driver.css" />
 </head>
-<body class="locked"> <!-- Start locked to show login initially -->
-
+<body class="locked">
   <header class="top-nav" role="banner">
     <div class="top-nav-inner">
       <div class="brand">
         <img src="img/garbage-truck.png" alt="" aria-hidden="true">
         <span class="app-title">TrashTracktify</span>
       </div>
+      <span id="driverNameDisplay" class="driver-name"></span>
     </div>
-
     <div class="driver-controls">
       <label class="switch">
         <input id="trackingToggle" type="checkbox" />
@@ -24,13 +23,13 @@
       </label>
       <span id="trackingLabel">STOP</span>
     </div>
+    <div class="top-actions">
+      <button id="logoutBtn" class="icon-btn">Logout</button>
+    </div>
   </header>
-
   <main class="map-main">
     <div id="map"></div>
   </main>
-
-  <!-- DARK MODE STATUS PANEL -->
   <div class="status-panel" id="statusPanel">
     <button class="status-header" id="statusDropdown">Truck Status ▼</button>
     <div class="status-options" id="statusOptions">
@@ -41,24 +40,17 @@
       <button id="statusFinished">Finished</button>
     </div>
   </div>
-
-  <nav class="bottom-nav">
-    <a class="nav-item active" href="driver.html">
+  <nav class="bottom-nav" aria-label="Main navigation">
+    <a class="nav-item" href="driver.html">
       <img src="img/map.png" alt="Map">
-      <span>Map</span>
     </a>
     <a class="nav-item" href="driver-schedule.html">
       <img src="img/cal.png" alt="Schedule">
-      <span>Schedule</span>
     </a>
   </nav>
-
-  <!-- === POPUPS === -->
-
-  <!-- 1. Login Popup -->
-  <div id="loginPopup" class="popup show"> <!-- Start with 'show' class -->
+  <div id="loginPopup" class="popup show">
     <div class="popup-content">
-      <img src="img/truck.png" alt="Truck Icon" class="popup-icon">
+      <img src="img/garbage-truck.png" alt="Truck Icon" class="popup-icon">
       <h1>Driver Login</h1>
       <form id="loginForm">
         <input type="text" id="driverName" name="driverName" placeholder="Driver Name" required autocomplete="username">
@@ -72,51 +64,71 @@
       </form>
     </div>
   </div>
-
-  <!-- 2. Registration Popup -->
   <div id="registerPopup" class="popup">
     <div class="popup-content">
-       <img src="img/truck.png" alt="Truck Icon" class="popup-icon">
-       <h1>Driver Registration</h1>
-       <form id="registerForm">
-         <input type="text" id="regName" name="regName" placeholder="Full Name" required autocomplete="name">
-         <input type="tel" id="regPhone" name="regPhone" placeholder="Phone (09xxxxxxxxx)" required autocomplete="tel" pattern="09[0-9]{9}">
-         <select id="regBarangay" name="regBarangay" required>
-            <option value="" disabled selected>Select Assigned Barangay</option>
-            <option value="Tugatog">Tugatog</option>
-            <option value="Acacia">Acacia</option>
-            <option value="Tinajeros">Tinajeros</option>
-         </select>
-         <input type="password" id="regPassword" name="regPassword" placeholder="Create Password (min 6 chars)" required autocomplete="new-password" minlength="6">
-         <button type="submit" id="registerBtn" class="primary-btn">Register</button>
-         <div class="popup-links">
-           <button type="button" class="link-btn" id="backToLoginFromRegister">Back to Login</button>
-         </div>
-         <div id="registerMsg" class="msg"></div>
-       </form>
+      <img src="img/garbage-truck.png" alt="Truck Icon" class="popup-icon">
+      <h1>Driver Registration</h1>
+      <form id="registerForm">
+        <input type="text" id="regName" name="regName" placeholder="Full Name" required autocomplete="name">
+        <input type="tel" id="regPhone" name="regPhone" placeholder="Phone (09xxxxxxxxx)" required autocomplete="tel" pattern="09[0-9]{9}">
+        <select id="regBarangay" name="regBarangay" required>
+          <option value="" disabled selected>Select Assigned Barangay</option>
+          <option value="Tugatog">Tugatog</option>
+          <option value="Acacia">Acacia</option>
+          <option value="Tinajeros">Tinajeros</option>
+        </select>
+        <input type="password" id="regPassword" name="regPassword" placeholder="Create Password (min 6 chars)" required autocomplete="new-password" minlength="6">
+        <button type="submit" id="registerBtn" class="primary-btn">Register</button>
+        <div class="popup-links">
+          <button type="button" class="link-btn" id="backToLoginFromRegister">Back to Login</button>
+        </div>
+        <div id="registerMsg" class="msg"></div>
+      </form>
     </div>
   </div>
-
-  <!-- 3. Forgot Password Popup -->
   <div id="forgotPasswordPopup" class="popup">
-     <div class="popup-content">
-       <img src="img/truck.png" alt="Truck Icon" class="popup-icon">
-       <h1>Reset Password</h1>
-       <form id="forgotPasswordForm">
-         <p class="desc">Enter your phone number to receive reset instructions (functionality not implemented yet).</p>
-         <input type="tel" id="resetPhone" name="resetPhone" placeholder="Phone (09xxxxxxxxx)" required autocomplete="tel" pattern="09[0-9]{9}">
-         <button type="submit" id="sendResetBtn" class="primary-btn">Send Reset Link</button>
-         <div class="popup-links">
-            <button type="button" class="link-btn" id="backToLoginFromForgot">Back to Login</button>
-         </div>
-         <div id="forgotMsg" class="msg"></div>
-       </form>
-     </div>
-   </div>
-
-  <!-- === END POPUPS === -->
-
-
+    <div class="popup-content">
+      <img src="img/truck.png" alt="Truck Icon" class="popup-icon">
+      <h1>Reset Password</h1>
+      <form id="forgotPasswordForm">
+        <p class="desc">Enter your phone number to receive a 6-digit reset code via SMS.</p>
+        <input type="tel" id="resetPhone" name="resetPhone" placeholder="Phone (09xxxxxxxxx)" required autocomplete="tel" pattern="09[0-9]{9}">
+        <button type="submit" id="sendResetBtn" class="primary-btn">Send Reset Code</button>
+        <div class="popup-links">
+          <button type="button" class="link-btn" id="backToLoginFromForgot">Back to Login</button>
+        </div>
+        <div id="forgotMsg" class="msg"></div>
+      </form>
+    </div>
+  </div>
+  <div id="resetWithCodePopup" class="popup">
+    <div class="popup-content">
+      <img src="img/truck.png" alt="Truck Icon" class="popup-icon">
+      <h1>Enter Code</h1>
+      <form id="resetWithCodeForm">
+        <p class="desc">Enter the 6-digit code sent to your phone and your new password.</p>
+        <input type="hidden" id="resetPhoneHidden" name="phone">
+        <input type="tel" id="resetCode" name="token" placeholder="6-Digit Code" required pattern="\d{6}" maxlength="6">
+        <input type="password" id="resetNewPassword" name="newPassword" placeholder="New Password (min 6 chars)" required minlength="6">
+        <input type="password" id="resetConfirmPassword" name="confirmPassword" placeholder="Confirm New Password" required minlength="6">
+        <button type="submit" id="submitResetBtn" class="primary-btn">Update Password</button>
+        <div class="popup-links">
+          <button type="button" class="link-btn" id="backToLoginFromCode">Back to Login</button>
+        </div>
+        <div id="resetCodeMsg" class="msg"></div>
+      </form>
+    </div>
+  </div>
+  <div id="logoutPopup" class="popup">
+    <div class="popup-content register">
+      <h1>Confirm Logout</h1>
+      <h2>Are you sure you want to logout?</h2>
+      <div class="popup-buttons">
+        <button id="confirmLogout" class="primary-btn">Yes, Logout</button>
+        <button id="cancelLogout" class="primary-btn" style="background:#222; color:var(--text);">Cancel</button>
+      </div>
+    </div>
+  </div>
   <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
   <script src="https://cdn.socket.io/4.7.2/socket.io.min.js"></script>
   <script src="https://unpkg.com/@turf/turf/turf.min.js"></script>

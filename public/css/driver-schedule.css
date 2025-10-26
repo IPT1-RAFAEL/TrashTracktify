@@ -12,7 +12,7 @@
 * { box-sizing: border-box; margin: 0; padding: 0; }
 html, body { height: 100%; }
 body {
-  font-family: 'Georgia',serif;
+  font-family: 'Poppins', sans-serif;
   background: var(--bg);
   color: var(--text);
   display: flex;
@@ -22,35 +22,40 @@ body {
 }
 
 /* Top Bar */
-.top-bar {
+.top-bar, .top-nav {
   position: fixed;
-  top: 0; left: 0; right: 0;
+  top: 0;
+  left: 0;
+  right: 0;
   height: 56px;
-  background: #111;
+  background: var(--bg-dark);
   color: var(--text);
   display: flex;
   align-items: center;
-  z-index: 1200;
+  justify-content: space-between;
   padding: 8px 16px;
   box-shadow: 0 2px 12px rgba(0,0,0,0.7);
+  z-index: 1200;
+  font-family: 'Poppins', sans-serif;
 }
-.top-nav-inner {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  width: 100%;
-}
+
 .brand {
   display: flex;
   align-items: center;
   gap: 10px;
 }
-.brand img { width: 34px; height: 34px; object-fit: contain; }
-.app-title {
+.brand img {
+  width: 34px;
+  height: 34px;
+  object-fit: contain;
+}
+.brand-title, .app-title {
   font-weight: 700;
   font-size: 16px;
   color: #fff;
+  letter-spacing: 0.5px;
 }
+
 .top-actions .icon-btn {
   background: transparent;
   border: none;
@@ -59,6 +64,11 @@ body {
   padding: 6px 8px;
   border-radius: 8px;
   cursor: pointer;
+  transition: 0.2s ease;
+}
+.top-actions .icon-btn:hover {
+  color: var(--accent-dim);
+  transform: translateY(-1px);
 }
 
 /* Main Layout */
@@ -156,6 +166,24 @@ main#content {
   display: grid;
   grid-template-columns: repeat(7, 1fr);
   gap: 10px;
+}
+/* --- NEW: Holiday Calendar Styles --- */
+.month-grid .cell.is-holiday {
+  background-color: #5d1a1a !important; /* Dark red */
+  color: #ffb8b8 !important;
+  font-weight: bold;
+  cursor: default;
+}
+
+.month-grid .cell.is-holiday:hover {
+  background-color: #8a2a2a !important;
+}
+
+/* Style for the 'Today' cell if it's also a holiday */
+.month-grid .cell.today.is-holiday {
+  background-color: #8a2a2a !important;
+  color: #fff !important;
+  border: 2px solid #ffb8b8;
 }
 .cell {
   background: #1e1e1e;
@@ -283,6 +311,33 @@ main#content {
 }
 .popup-content.register form button:hover {
   background: var(--accent-dim);
+}
+
+/* Logout Button Styling */
+#logoutBtn {
+  background: white;
+  color: #ffffff;
+  font-weight: 700;
+  border: none;
+  padding: 8px 14px;
+  border-radius: 10px;
+  cursor: pointer;
+  transition: all 0.25s ease;
+}
+#logoutBtn:hover {
+  background: white;
+  transform: translateY(-2px);
+}
+/* Logout Popup Buttons */
+.popup-buttons {
+  display: flex;
+  justify-content: space-between;
+  gap: 10px;
+  margin-top: 10px;
+}
+
+#logoutPopup .primary-btn {
+  flex: 1;
 }
 
 @keyframes fadeIn {

@@ -1,37 +1,40 @@
 const socket = io("https://trashtracktify.onrender.com");
-// const socket = io("http://localhost:3000");
 
 
-// --- DOM Element References ---
 const statusPanel = document.getElementById('statusPanel');
 const statusDropdown = document.getElementById('statusDropdown');
 const statusOptions = document.getElementById('statusOptions');
-const statusButtons = statusOptions.querySelectorAll('button[data-value]'); // Select only percentage buttons
+const statusButtons = statusOptions.querySelectorAll('button[data-value]');
 const statusFinishedButton = document.getElementById('statusFinished');
 
 // --- Popup Elements ---
 const loginPopup = document.getElementById('loginPopup');
 const registerPopup = document.getElementById('registerPopup');
 const forgotPasswordPopup = document.getElementById('forgotPasswordPopup');
+const resetWithCodePopup = document.getElementById('resetWithCodePopup'); 
 
 const loginForm = document.getElementById('loginForm');
 const registerForm = document.getElementById('registerForm');
 const forgotPasswordForm = document.getElementById('forgotPasswordForm');
+const resetWithCodeForm = document.getElementById('resetWithCodeForm');
 
 const loginBtn = document.getElementById('loginBtn');
 const registerBtn = document.getElementById('registerBtn');
 const sendResetBtn = document.getElementById('sendResetBtn');
+const submitResetBtn = document.getElementById('submitResetBtn'); 
 
 // Buttons to switch popups
 const showRegisterBtn = document.getElementById('showRegisterPopupBtn');
 const showForgotPasswordBtn = document.getElementById('showForgotPasswordBtn');
 const backToLoginFromRegister = document.getElementById('backToLoginFromRegister');
 const backToLoginFromForgot = document.getElementById('backToLoginFromForgot');
+const backToLoginFromCode = document.getElementById('backToLoginFromCode'); 
 
 // Message areas
 const loginMsg = document.getElementById('loginMsg');
 const registerMsg = document.getElementById('registerMsg');
 const forgotMsg = document.getElementById('forgotMsg');
+const resetCodeMsg = document.getElementById('resetCodeMsg'); 
 // --- End Popup Elements ---
 
 
@@ -183,7 +186,7 @@ statusButtons.forEach(button => {
 if (statusFinishedButton) {
   statusFinishedButton.addEventListener('click', () => {
     console.log('[Driver] "Finished Emptying" button clicked. Sending 0%.');
-    sendLoadUpdate(0); // This now sends the 0% signal
+    sendLoadUpdate(0);
     if (statusOptions) statusOptions.style.display = 'none';
   });
 }
@@ -197,37 +200,43 @@ document.addEventListener('click', (event) => {
 
 updateStatusHeader(currentLoadPercent); 
 
+
 // --- Popup Switching Logic ---
 
 function showPopup(popupToShow) {
-  // Hide all popups first
-  [loginPopup, registerPopup, forgotPasswordPopup].forEach(p => {
+  [loginPopup, registerPopup, forgotPasswordPopup, resetWithCodePopup].forEach(p => { 
     if (p) p.classList.remove('show');
   });
-  // Show the requested one
   if (popupToShow) popupToShow.classList.add('show');
-  // Lock body scroll
   if (document.body) document.body.classList.add("locked");
 }
 
 function hideAllPopups() {
-   [loginPopup, registerPopup, forgotPasswordPopup].forEach(p => {
+   [loginPopup, registerPopup, forgotPasswordPopup, resetWithCodePopup].forEach(p => { 
     if (p) p.classList.remove('show');
   });
    if (document.body) document.body.classList.remove('locked');
 }
-
+const existingDriver = localStorage.getItem('driverName');
+if (existingDriver) {
+    document.body.classList.remove('locked');
+    hideAllPopups();
+    initializeMapAndMarker();
+    loadAndDrawMapData();
+    loadSchedule();
+}
 // Wire up the buttons to switch popups
 if (showRegisterBtn) showRegisterBtn.addEventListener('click', () => showPopup(registerPopup));
 if (showForgotPasswordBtn) showForgotPasswordBtn.addEventListener('click', () => showPopup(forgotPasswordPopup));
 if (backToLoginFromRegister) backToLoginFromRegister.addEventListener('click', () => showPopup(loginPopup));
 if (backToLoginFromForgot) backToLoginFromForgot.addEventListener('click', () => showPopup(loginPopup));
+if (backToLoginFromCode) backToLoginFromCode.addEventListener('click', () => showPopup(loginPopup));
 
 // --- Driver Registration Form Handling ---
 if (registerForm && registerBtn) {
     registerForm.addEventListener('submit', async (e) => {
         e.preventDefault();
-        registerMsg.textContent = ''; // Clear previous messages
+        registerMsg.textContent = ''; 
         registerMsg.style.color = ''; 
 
         const name = document.getElementById('regName')?.value.trim();
@@ -258,7 +267,7 @@ if (registerForm && registerBtn) {
         registerBtn.disabled = true;
 
         try {
-            const res = await fetch('/driver-register', { // Calls the backend endpoint
+            const res = await fetch('/driver-register', { 
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({
@@ -274,7 +283,7 @@ if (registerForm && registerBtn) {
             registerMsg.textContent = result.message || 'Registration successful! Redirecting to login...';
             registerMsg.style.color = 'lightgreen';
             registerForm.reset();
-            setTimeout(() => showPopup(loginPopup), 1500); // Show login after success
+            setTimeout(() => showPopup(loginPopup), 1500);
 
         } catch (err) {
             console.error('Driver registration error:', err);
@@ -293,7 +302,7 @@ if (registerForm && registerBtn) {
 if (loginForm && loginBtn) {
     loginForm.addEventListener('submit', async (e) => {
         e.preventDefault();
-        loginMsg.textContent = ''; // Clear message
+        loginMsg.textContent = '';
         loginMsg.style.color = '';
 
         const name = document.getElementById('driverName')?.value.trim();
@@ -309,7 +318,7 @@ if (loginForm && loginBtn) {
         loginBtn.disabled = true;
 
         try {
-            const res = await fetch('/driver-login', { // Calls the backend endpoint
+            const res = await fetch('/driver-login', {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({ driverName: name, driverPassword: password })
@@ -323,8 +332,10 @@ if (loginForm && loginBtn) {
 
             // Store driver info from server response
             if (result.driver && result.driver.truckId) {
-                localStorage.setItem('truckId', result.driver.truckId);
-                DRIVER_TRUCK_ID = result.driver.truckId; // Update global variable
+                localStorage.setItem('driverName', result.driver.name);
+                localStorage.setItem('driverBarangay', result.driver.barangay || 'Unknown');
+                DRIVER_TRUCK_ID = result.driver.truckId; 
+                localStorage.setItem('truckId', DRIVER_TRUCK_ID); 
                 console.log(`Stored and updated truckId: ${DRIVER_TRUCK_ID}`);
             } else {
                  console.warn("Login response missing truckId. Assigning default.");
@@ -338,10 +349,10 @@ if (loginForm && loginBtn) {
             // Hide popup after a short delay
             setTimeout(() => {
                 hideAllPopups();
-                 // Initialize map and driver marker *after* successful login
                 initializeMapAndMarker();
-                loadAndDrawMapData(); // Load polygons/streets onto the initialized map
-                loadSchedule(); // Load schedule data if needed on this page
+                loadAndDrawMapData();
+                loadSchedule();
+
             }, 800);
 
 
@@ -358,41 +369,132 @@ if (loginForm && loginBtn) {
     console.warn('Login form or button not found.');
 }
 
-// --- Forgot Password Form Handling (Placeholder) ---
+// --- Forgot Password Form Handling (Functional - OTP Version) ---
 if (forgotPasswordForm && sendResetBtn) {
-    forgotPasswordForm.addEventListener('submit', (e) => {
+    forgotPasswordForm.addEventListener('submit', async (e) => {
         e.preventDefault();
-        forgotMsg.textContent = ''; // Clear message
+        forgotMsg.textContent = '';
         forgotMsg.style.color = '';
 
-        const phone = document.getElementById('resetPhone')?.value.trim();
+        const phoneInput = document.getElementById('resetPhone');
+        const phone = phoneInput?.value.trim();
         if (!phone || !/^09\d{9}$/.test(phone)) {
             forgotMsg.textContent = 'Please enter a valid phone number (09xxxxxxxxx).';
             forgotMsg.style.color = 'orange';
             return;
         }
 
-        // --- Placeholder Logic ---
-        // In a real app, you would make an API call here.
         console.log(`[Forgot Password] Request submitted for phone: ${phone}`);
         sendResetBtn.textContent = 'Sending...';
         sendResetBtn.disabled = true;
 
-        // Simulate API call
-        setTimeout(() => {
-            forgotMsg.textContent = 'If an account exists for this number, reset instructions have been sent (simulation).';
-            forgotMsg.style.color = 'lightgreen';
-            sendResetBtn.textContent = 'Send Reset Link';
+        try {
+            const res = await fetch('/forgot-password', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ resetPhone: phone })
+            });
+
+            const result = await res.json();
+            if (!res.ok) throw new Error(result.error || `Request failed: ${res.status}`);
+
+            // --- MODIFICATION: On success, show the *next* popup ---
+            forgotMsg.textContent = result.message || 'Reset code sent!';
+            forgotMsg.style.color = 'var(--accent, lightgreen)';
+
+            // Populate the hidden phone field in the *next* form
+            const hiddenPhoneField = document.getElementById('resetPhoneHidden');
+            if (hiddenPhoneField) {
+                hiddenPhoneField.value = phone;
+            }
+
+            // Switch popups
+            setTimeout(() => {
+                forgotPasswordForm.reset();
+                forgotMsg.textContent = ''; 
+                showPopup(resetWithCodePopup); 
+            }, 1000);
+
+
+        } catch (err) {
+            console.error('Forgot password error:', err);
+            forgotMsg.textContent = `Error: ${err.message}`;
+            forgotMsg.style.color = 'red';
+        } finally {
+            // Re-enable button
+            sendResetBtn.textContent = 'Send Reset Code';
             sendResetBtn.disabled = false;
-        }, 1500);
-        // --- End Placeholder ---
+        }
+    });
+}
+
+// --- NEW: Reset With Code Form Handling ---
+if (resetWithCodeForm && submitResetBtn) {
+    resetWithCodeForm.addEventListener('submit', async (e) => {
+        e.preventDefault();
+        resetCodeMsg.textContent = '';
+        resetCodeMsg.style.color = '';
+
+        const formData = new FormData(e.target);
+        const data = Object.fromEntries(formData.entries());
+
+        // Frontend validation
+        if (data.newPassword.length < 6) {
+             resetCodeMsg.textContent = 'Password must be at least 6 characters.';
+             resetCodeMsg.style.color = 'orange';
+             return;
+        }
+        if (data.newPassword !== data.confirmPassword) {
+             resetCodeMsg.textContent = 'Passwords do not match.';
+             resetCodeMsg.style.color = 'orange';
+             return;
+        }
+        if (!/^\d{6}$/.test(data.token)) {
+             resetCodeMsg.textContent = 'Code must be 6 digits.';
+             resetCodeMsg.style.color = 'orange';
+             return;
+        }
+
+        submitResetBtn.textContent = 'Updating...';
+        submitResetBtn.disabled = true;
+
+        try {
+            // Send ALL fields (phone, token, newPassword, confirmPassword) to the backend
+            const res = await fetch('/reset-password', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify(data)
+            });
+
+            const result = await res.json();
+            if (!res.ok) throw new Error(result.error || `Update failed: ${res.status}`);
+
+            // Success!
+            resetCodeMsg.textContent = result.message || 'Password reset successful!';
+            resetCodeMsg.style.color = 'var(--accent, lightgreen)';
+            
+            // Redirect to login page after a delay
+            setTimeout(() => {
+                resetWithCodeForm.reset();
+                resetCodeMsg.textContent = '';
+                showPopup(loginPopup);
+            }, 2000);
+
+        } catch (err) {
+            console.error('Password reset error:', err);
+            resetCodeMsg.textContent = `Error: ${err.message}`;
+            resetCodeMsg.style.color = 'red';
+        } finally {
+            submitResetBtn.textContent = 'Update Password';
+            submitResetBtn.disabled = false;
+        }
     });
 }
 
 
 // --- Map Initialization (Called after login) ---
 function initializeMapAndMarker() {
-    if (!map && mapElement) { // Initialize map only once
+    if (!map && mapElement) {
         map = L.map('map').setView([14.667, 120.967], 15);
         L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
           attribution: '&copy; OpenStreetMap contributors'
@@ -400,7 +502,7 @@ function initializeMapAndMarker() {
         console.log("Map initialized.");
     } else if (!mapElement) {
         console.error("Map container element not found!");
-        return; // Stop if map div doesn't exist
+        return;
     }
 
     if (driverMarker && map.hasLayer(driverMarker)) {
@@ -450,7 +552,6 @@ function updateTruckPath() {
         truckPath = L.polyline(truckPathCoords, {
             color: 'blue', weight: 4, opacity: 0.7
         }).addTo(map);
-        // console.log(`[Driver] Updated truck path with ${truckPathCoords.length} points`);
     }
 }
 
@@ -475,6 +576,7 @@ async function sendLocationUpdate(latLng, source) {
   let shouldNotify = false;
   let notificationKey = null;
 
+  
   if (allStreetMarkers.length > 0) {
       const nearest = allStreetMarkers.reduce((closest, item) => {
         if (!item.coords || item.coords.length !== 2) return closest;
@@ -532,7 +634,7 @@ async function sendLocationUpdate(latLng, source) {
       const etaText = (etaData.etaMinutes !== undefined)
         ? (etaData.etaMinutes >= 0 ? `ETA: ${etaData.etaMinutes} min${etaData.etaMinutes !== 1 ? 's' : ''}` : `ETA: ${etaData.error || 'N/A'}`)
         : 'ETA Unknown';
-      if (map.hasLayer(driverMarker)) { // Check if marker is still on map
+      if (map.hasLayer(driverMarker)) {
           driverMarker.setPopupContent(`<b>${DRIVER_TRUCK_ID} (You)</b><br>Next: ${etaData.nextStop || 'N/A'}<br>${etaText}`);
       }
     }
@@ -561,14 +663,14 @@ function startGeoWatch() {
 
       if (driverMarker && map && map.hasLayer(driverMarker)) {
           driverMarker.setLatLng(latlng);
-          map.setView(latlng, map.getZoom()); // Center map on first fix
+          map.setView(latlng, map.getZoom());
       } else {
           console.warn("Driver marker doesn't exist or isn't on map to update initial position.");
           if (map && !driverMarker) {
               initializeMapAndMarker();
               if (driverMarker) {
                    driverMarker.setLatLng(latlng);
-                   map.setView(latlng, map.getZoom()); // Center map on first fix
+                   map.setView(latlng, map.getZoom());
               }
           }
       }
@@ -671,7 +773,7 @@ if (toggleEl && labelEl) {
 socket.on("location-update", (data) => {
   const { latitude, longitude, truckId } = data;
   if (latitude === undefined || longitude === undefined || !truckId) return;
-  if (truckId === DRIVER_TRUCK_ID) return; // Ignore self
+  if (truckId === DRIVER_TRUCK_ID) return;
   if (!map) return; 
 
   const newLatLng = [latitude, longitude];
@@ -722,7 +824,7 @@ async function loadSchedule() {
         console.error('loadSchedule error on driver page', err);
     }
 }
-socket.on('schedule-update', loadSchedule); // Listen for updates
+socket.on('schedule-update', loadSchedule);
 
 // --- Initial DOM Content Loaded ---
 document.addEventListener("DOMContentLoaded", () => {
@@ -737,7 +839,7 @@ document.addEventListener("DOMContentLoaded", () => {
         if (showLoginParam) console.log("URL parameter found, showing login popup.");
         else console.log("Not logged in, showing login popup.");
         
-        showPopup(loginPopup); // Use the new function to show popup
+        showPopup(loginPopup);
         // Ensure map is NOT initialized yet
         if (map) {
              console.warn("Map was initialized before login, removing.");
@@ -748,13 +850,11 @@ document.addEventListener("DOMContentLoaded", () => {
         // Already logged in and not redirected to login
         console.log(`Already logged in as ${storedTruckId}. Initializing map.`);
         DRIVER_TRUCK_ID = storedTruckId; 
-        hideAllPopups(); // Ensure popups are hidden
+        hideAllPopups(); 
         initializeMapAndMarker(); 
         loadAndDrawMapData();
         loadSchedule();
         if (toggleEl) {
-             // Set toggle state based on previous session or default off
-             // For now, default to off on page load
              toggleEl.checked = false; 
              setTracking(false); 
         }

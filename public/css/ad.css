@@ -1,8 +1,10 @@
 :root {
-  --accent: #00C853; /* emerald green accent */
-  --bg: #0F0F0F; /* dark background */
-  --card: #1B1B1B; /* dark cards */
-  --muted: #999;
+  --bg: #0d0d0d;
+  --card: #161616;
+  --text: #e8e8e8;
+  --muted: #8a8a8a;
+  --accent: #00ff85;
+  --accent-dim: #00995f;
   --nav-height: 70px;
 }
 
@@ -10,43 +12,64 @@
 * { box-sizing: border-box; margin: 0; padding: 0; }
 html, body { height: 100%; }
 body {
-  margin: 0;
-  font-family: 'Georgia', serif;
+  font-family: 'Poppins', sans-serif;
   background: var(--bg);
+  color: var(--text);
   display: flex;
   flex-direction: column;
-  height: 100vh;
-  color: #EAEAEA;
+  min-height: 100vh;
+  -webkit-font-smoothing: antialiased;
 }
 
 /* top nav */
-.top-nav {
+.top-bar, .top-nav {
   position: fixed;
   top: 0;
   left: 0;
-  width: 100%;
+  right: 0;
   height: 56px;
-  background: rgba(25, 25, 25, 0.95);
-  color: #fff;
+  background: var(--bg);
+  color: var(--text);
   display: flex;
   align-items: center;
+  justify-content: space-between;
+  padding: 8px 16px;
+  box-shadow: 0 2px 12px rgba(0,0,0,0.7);
   z-index: 1200;
-  padding: 8px 12px;
-  box-shadow: 0 2px 8px rgba(0,0,0,0.4);
+  font-family: 'Poppins', sans-serif;
 }
-.brand { display: flex; align-items: center; gap: 10px; }
-.brand img { width: 34px; height: 34px; object-fit: contain; }
-.app-title { font-weight: 700; font-size: 16px; letter-spacing: 0.4px; color: #fff; }
+
+.brand {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+.brand img {
+  width: 34px;
+  height: 34px;
+  object-fit: contain;
+}
+.brand-title, .app-title {
+  font-weight: 700;
+  font-size: 16px;
+  color: #fff;
+  letter-spacing: 0.5px;
+}
+
 .top-actions .icon-btn {
   background: transparent;
   border: none;
-  color: #fff;
+  color: white;
   font-weight: 700;
   padding: 6px 8px;
   border-radius: 8px;
   cursor: pointer;
+  transition: 0.2s ease;
 }
-.icon-btn:active { transform: translateY(1px); }
+.top-actions .icon-btn:hover {
+  color: var(--accent-dim);
+  transform: translateY(-1px);
+}
 
 /* Content wrapper */
 main#content {
@@ -129,45 +152,43 @@ main#content {
   position: fixed;
   bottom: 0;
   left: 0;
-  width: 100%;
+  right: 0;
+  height: var(--nav-height);
+  background: var(--bg);
   display: flex;
   justify-content: space-around;
   align-items: center;
-  height: var(--nav-height);
-  padding: 6px 12px;
-  background: rgba(20,20,20,0.95);
-  border-top: 1px solid rgba(255,255,255,0.08);
-  box-shadow: 0 -6px 20px rgba(0,0,0,0.4);
+  box-shadow: 0 -4px 12px rgba(0,0,0,0.5);
+  border-top: 1px solid rgba(255,255,255,0.05);
   z-index: 1000;
 }
+
 .nav-item {
   display: flex;
   flex-direction: column;
   align-items: center;
   justify-content: center;
-  text-decoration: none;
-  color: #EAEAEA;
-  font-size: 11px;
   gap: 4px;
-  background: transparent;
-  border: none;
-  padding: 6px;
-  min-width: 56px;
-  border-radius: 10px;
-  transition: transform .12s ease, background .12s ease;
+  color: var(--text);
+  text-decoration: none;
+  font-weight: 600;
+  font-size: 12px;
+  transition: 0.2s ease;
 }
 .nav-item img {
-  width: 28px;
-  height: 28px;
-  object-fit: contain;
-  filter: invert(1);
-  opacity: 0.95;
+  width: 30px;
+  height: 30px;
+  filter: grayscale(100%) brightness(0.7);
+  transition: 0.2s ease;
 }
-.nav-item:hover, .nav-item:focus { transform: translateY(-4px); background: rgba(255,255,255,0.05); }
-.nav-item.active img, .nav-item:hover img {
-  filter: invert(1) brightness(1.2);
-  transform: translateY(-2px) scale(1.02);
-  opacity: 1;
+.nav-item.active img,
+.nav-item:hover img {
+  filter: none;
+  transform: translateY(-2px) scale(1.05);
+}
+.nav-item.active,
+.nav-item:hover {
+  color: var(--accent);
 }
 
 /* === Truck Status + Trip Counter Alignment === */
@@ -274,6 +295,55 @@ main#content {
   box-shadow: 0 0 10px rgba(0,200,83,0.5);
 }
 
+/* --- NEW CALENDAR STYLES --- */
+.month-grid .cell {
+  position: relative; /* Needed for pseudo-elements */
+  transition: background-color 0.2s ease;
+}
+
+/* Style for HOLIDAY cells */
+.month-grid .is-holiday {
+  background-color: #5d1a1a !important; /* Dark red */
+  color: #ffb8b8 !important;
+  font-weight: bold;
+}
+.month-grid .is-holiday:hover {
+  background-color: #8a2a2a !important;
+}
+
+/* Style for TIME_LOG cells (a small dot) */
+.month-grid .has-log::after {
+  content: '';
+  position: absolute;
+  bottom: 8px;
+  left: calc(50% - 3px);
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background-color: var(--accent);
+  box-shadow: 0 0 5px var(--accent);
+}
+
+/* Make sure "today" styles don't get completely overridden */
+.month-grid .today.is-holiday {
+  background-color: #8a2a2a !important;
+  color: #fff !important;
+  border: 2px solid #ffb8b8;
+}
+
+/* Make cells with events clickable */
+.month-grid .cell:not(.disabled) {
+  cursor: pointer;
+}
+
+/* --- FIX for Save Button --- */
+.barangay-info .barangay-time-input {
+  flex-wrap: nowrap;
+}
+
+.barangay-info .save-btn {
+  flex-wrap: nowrap;
+}
 /* Responsive Fix */
 @media (max-width: 900px) {
   .status-widgets {
@@ -288,7 +358,7 @@ main#content {
 
 
 /* Schedule page */
-.main-content { padding: 20px; padding-top: 80px; }
+.main-content { padding: 20px; padding-top: 80px; padding-bottom: calc(70px + env(safe-area-inset-bottom)); }
 .schedule { max-width: 1200px; margin: 0 auto; }
 .container-grid {
   display: grid;
@@ -296,15 +366,16 @@ main#content {
   gap: 20px;
   align-items: start;
 }
-.barangays { display: flex; flex-direction: column; gap: 14px; }
+.barangays { display: flex; flex-direction: column; gap: 14px; flex-wrap: nowrap; }
 .barangay {
   background: var(--card);
   border-radius: 12px;
   padding: 14px;
   box-shadow: 0 6px 18px rgba(0,0,0,0.5);
   border: 1px solid rgba(255,255,255,0.08);
+  flex-wrap: nowrap;
 }
-.barangay h2 { margin: 0 0 8px 0; color: var(--accent); font-size: 18px; }
+.barangay h2 { margin: 0 0 8px 0; color: var(--accent); font-size: 18px; flex-wrap: nowrap; }
 
 /* Day spans */
 .days {
@@ -515,4 +586,199 @@ main#content {
   .trip-card .trip-value {
     font-size: 20px;
   }
+  
 }
+
+
+/* === NEW: POPUP STYLES (Copied from driver.css and adapted) === */
+.popup {
+  position: fixed;
+  inset: 0; /* top, right, bottom, left = 0 */
+  background-color: rgba(0, 0, 0, 0.7);
+  display: none; /* Hidden by default */
+  align-items: center;
+  justify-content: center;
+  z-index: 1500;
+  padding: 15px;
+}
+
+.popup.show {
+  display: flex; /* Show when this class is added */
+}
+
+.popup-content {
+  background-color: #2a2a2a; /* Dark background for popup card */
+  color: #e0e0e0;
+  padding: 30px 25px;
+  border-radius: 12px;
+  width: 100%;
+  max-width: 380px; /* Limit width on larger screens */
+  text-align: center;
+  box-shadow: 0 5px 20px rgba(0,0,0,0.4);
+  animation: popup-fade-in 0.3s ease-out;
+}
+
+.popup-icon {
+  width: 60px; /* Smaller icon */
+  height: auto;
+  margin-bottom: 15px;
+  filter: invert(1); /* Make admin icon white */
+}
+
+.popup-content h1 {
+  margin-top: 0;
+  margin-bottom: 20px;
+  font-size: 1.5rem;
+  color: #fff; /* White title */
+}
+
+.popup-content .desc {
+  font-size: 0.9rem;
+  color: #aaa; /* Lighter grey for description */
+  margin-bottom: 15px;
+}
+
+.popup-content form input,
+.popup-content form select {
+  width: 100%;
+  padding: 12px;
+  margin-bottom: 15px;
+  border: 1px solid #444; /* Slightly lighter border */
+  border-radius: 8px;
+  background-color: #333; /* Darker input background */
+  color: #e0e0e0; /* Light text color */
+  font-size: 1rem;
+}
+
+.popup-content form input::placeholder {
+  color: #888; /* Lighter placeholder text */
+}
+
+.primary-btn {
+  display: block; /* Make button full width */
+  width: 100%;
+  padding: 12px;
+  border: none;
+  border-radius: 8px;
+  background-color: var(--accent); /* Accent color */
+  color: #111; /* Dark text on button */
+  font-size: 1rem;
+  font-weight: bold;
+  cursor: pointer;
+  transition: background-color 0.2s ease, transform 0.1s ease;
+}
+
+.primary-btn:hover {
+  background-color: #00a042; /* Darker shade of accent on hover */
+}
+.primary-btn:active {
+  transform: translateY(1px); /* Simple press effect */
+}
+.primary-btn:disabled {
+  background-color: #555;
+  cursor: not-allowed;
+}
+
+.popup-links {
+  margin-top: 20px;
+  display: flex;
+  flex-direction: column; /* Stack links vertically */
+  align-items: center;
+  gap: 10px; /* Space between links */
+}
+
+.link-btn {
+  background: none;
+  border: none;
+  color: var(--accent); /* Accent color */
+  text-decoration: underline;
+  cursor: pointer;
+  font-size: 0.9rem;
+  padding: 5px;
+}
+
+.link-btn:hover {
+  color: #33ff9c; /* Lighter shade on hover */
+}
+
+.msg {
+  margin-top: 15px;
+  font-size: 0.9rem;
+  min-height: 1.2em; /* Reserve space for message */
+}
+
+/* Body lock when popup is open */
+body.locked {
+  overflow: hidden;
+}
+
+.barangay-card {
+  background: #121212;
+  border-radius: 15px;
+  padding: 20px;
+  margin: 15px 0;
+  box-shadow: 0 8px 22px rgba(0,0,0,0.5);
+  border: 1px solid rgba(255,255,255,0.08);
+  color: #fff;
+}
+
+.barangay-name {
+  font-size: 1.5rem;
+  font-weight: 700;
+  color: #ffffff;
+  margin-bottom: 5px;
+}
+
+.barangay-date {
+  color: #00ff66;
+  font-size: 1.1rem;
+  font-weight: 700;
+  margin-bottom: 10px;
+}
+
+.barangay-info {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  
+}
+
+.barangay-time-input {
+  background: #1a1a1a;
+  box-shadow: 0 8px 22px rgba(0,0,0,0.5);
+  border: 1px solid rgba(255,255,255,0.08);
+  border-radius: 6px;
+  color: #00ff66;
+  padding: 4px 8px;
+  font-size: 1rem;
+  cursor: pointer;
+  
+}
+.barangay-time-input::-webkit-calendar-picker-indicator {
+  filter: invert(1);
+  cursor: pointer;
+}
+
+/* --- NEW CALENDAR HOLIDAY STYLE --- */
+.month-grid .is-holiday {
+  background-color: #5d1a1a !important; /* Dark red */
+  color: #ffb8b8 !important;
+  font-weight: bold;
+}
+
+.month-grid .is-holiday:hover {
+  background-color: #8a2a2a !important;
+}
+
+.month-grid .today.is-holiday {
+  background-color: #8a2a2a !important;
+  color: #fff !important;
+  border: 2px solid #ffb8b8;
+}
+
+/* Simple fade-in animation */
+@keyframes popup-fade-in {
+  from { opacity: 0; transform: scale(0.95); }
+  to { opacity: 1; transform: scale(1); }
+}
+
