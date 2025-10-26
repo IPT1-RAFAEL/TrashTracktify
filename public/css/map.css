@@ -113,7 +113,7 @@ main#content{
   box-shadow:0 6px 18px rgba(0,0,0,0.12);
   border:1px solid rgba(0,0,0,0.06);
   font-size:13px;
-  color:#222;
+  color:#ffffff;
 }
 .ts-title{font-weight:700;text-align:center;margin-bottom:6px;font-size:14px}
 .ts-body{display:flex;gap:8px;align-items:center;justify-content:center}

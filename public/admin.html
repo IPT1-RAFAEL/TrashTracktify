@@ -8,14 +8,11 @@
   <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
   <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
 </head>
-<body class="locked"> <header class="top-nav">
+<body> 
+  <header class="top-nav">
     <div class="brand">
       <img src="img/garbage-truck.png" alt="logo" class="brand-icon">
       <span class="brand-title">TrashTracktify</span>
-    </div>
-    <div class="top-actions">
-      <button id="adminLoginHeaderBtn" class="icon-btn" style="display:none;">Login</button>
-      <button id="adminLogoutBtn" class="icon-btn" style="display:none;">Logout</button>
     </div>
   </header>
 
@@ -103,73 +100,6 @@
     </div>
   </div>
 
-  <div id="adminLoginPopup" class="popup show"> <div class="popup-content">
-      <img src="img/admin.png" alt="Admin Icon" class="popup-icon">
-      <h1>Admin Login</h1>
-      <form id="adminLoginForm">
-        <input type="text" id="adminName" name="adminName" placeholder="Admin Name" required autocomplete="username">
-        <input type="password" id="adminPassword" name="adminPassword" placeholder="Password" required autocomplete="current-password">
-        <button type="submit" id="adminLoginBtn" class="primary-btn">Login</button>
-        <div class="popup-links">
-          <button type="button" class="link-btn" id="showAdminRegisterBtn">Register New Admin</button>
-          <button type="button" class="link-btn" id="showAdminForgotBtn">Forgot Password?</button>
-        </div>
-        <div id="adminLoginMsg" class="msg"></div>
-      </form>
-    </div>
-  </div>
-
-  <div id="adminRegisterPopup" class="popup">
-    <div class="popup-content">
-       <img src="img/admin.png" alt="Admin Icon" class="popup-icon">
-       <h1>Admin Registration</h1>
-       <form id="adminRegisterForm">
-         <input type="text" id="regAdminName" name="regName" placeholder="Full Name" required autocomplete="name">
-         <input type="tel" id="forgotAdminPhone" name="resetPhone" placeholder="Phone (09xxxxxxxxx)" required autocomplete="tel" pattern="09[0-9]{9}">
-         <input type="password" id="regAdminPassword" name="regPassword" placeholder="Create Password (min 6 chars)" required autocomplete="new-password" minlength="6">
-         <button type="submit" id="adminRegisterBtn" class="primary-btn">Register</button>
-         <div class="popup-links">
-           <button type="button" class="link-btn" id="backToLoginFromRegister">Back to Login</button>
-         </div>
-         <div id="adminRegisterMsg" class="msg"></div>
-       </form>
-    </div>
-  </div>
-
-  <div id="adminForgotPasswordPopup" class="popup">
-     <div class="popup-content">
-       <img src="img/admin.png" alt="Admin Icon" class="popup-icon">
-       <h1>Reset Password</h1>
-       <form id="adminForgotPasswordForm">
-         <p class="desc">Enter your phone number to receive a reset code via SMS.</p>
-         <input type="tel" id="forgotAdminPhone" name="resetPhone" placeholder="Phone (09xxxxxxxxx)" required autocomplete="tel" pattern="09[0-9]{9}">
-         <button type="submit" id="sendAdminResetBtn" class="primary-btn">Send Reset Link</button>
-         <div class="popup-links">
-            <button type="button" class="link-btn" id="backToLoginFromForgot">Back to Login</button>
-         </div>
-         <div id="adminForgotMsg" class="msg"></div>
-       </form>
-     </div>
-   </div>
-
-   <div id="adminResetPasswordPopup" class="popup">
-  <div class="popup-content">
-    <img src="img/admin.png" alt="Admin Icon" class="popup-icon">
-    <h1>Reset Admin Password</h1>
-    <form id="adminResetPasswordForm">
-      <p class="desc">Enter the 6-digit code sent to your phone and your new password.</p>
-      <input type="tel" id="resetAdminPhone" name="phone" placeholder="Phone (09xxxxxxxxx)" required autocomplete="tel" pattern="09[0-9]{9}">
-      <input type="text" id="resetCode" name="code" placeholder="6-digit code" required pattern="\d{6}">
-      <input type="password" id="resetNewPassword" name="newPassword" placeholder="New Password (min 6 chars)" required autocomplete="new-password" minlength="6">
-      <input type="password" id="resetConfirmPassword" name="confirmPassword" placeholder="Confirm New Password" required autocomplete="new-password" minlength="6">
-      <button type="submit" id="submitAdminResetBtn" class="primary-btn">Reset Password</button>
-      <div class="popup-links">
-        <button type="button" class="link-btn" id="backToLoginFromReset">Back to Login</button>
-      </div>
-      <div id="adminResetMsg" class="msg"></div>
-    </form>
-  </div>
-</div>
 
   <nav class="bottom-nav">
     <a href="admap.html" class="nav-item"><img src="img/map.png" alt="map"></a>

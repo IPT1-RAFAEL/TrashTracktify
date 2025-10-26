@@ -776,6 +776,10 @@ body.locked {
   border: 2px solid #ffb8b8;
 }
 
+.toast {
+  font-family: inherit;
+}
+
 /* Simple fade-in animation */
 @keyframes popup-fade-in {
   from { opacity: 0; transform: scale(0.95); }

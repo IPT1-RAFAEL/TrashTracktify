@@ -311,6 +311,10 @@ body.locked {
   overflow: hidden;
 }
 
+.toast {
+  font-family: inherit;
+}
+
 /* Simple fade-in animation */
 @keyframes popup-fade-in {
   from { opacity: 0; transform: scale(0.95); }

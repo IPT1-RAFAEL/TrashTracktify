@@ -1,5 +1,58 @@
 const socket = io("https://trashtracktify.onrender.com");
 
+// === TOAST NOTIFICATION SYSTEM ===
+function showToast(message, type = 'success', duration = 2000) {
+  // Remove any existing toast
+  const existing = document.querySelector('.toast');
+  if (existing) existing.remove();
+
+  const toast = document.createElement('div');
+  toast.className = `toast toast-${type}`;
+  toast.textContent = message;
+
+  // Style it
+  Object.assign(toast.style, {
+    position: 'fixed',
+    bottom: '20px',
+    right: '20px',
+    minWidth: '200px',
+    padding: '12px 20px',
+    borderRadius: '8px',
+    color: 'white',
+    fontWeight: '600',
+    fontSize: '0.95rem',
+    boxShadow: '0 4px 12px rgba(0,0,0,0.2)',
+    transform: 'translateY(100px)',
+    opacity: '0',
+    transition: 'all 0.3s ease',
+    zIndex: '10000',
+    pointerEvents: 'none'
+  });
+
+  // Color by type
+  const colors = {
+    success: '#4caf50',
+    error: '#f44336',
+    info: '#2196f3',
+    warning: '#ff9800'
+  };
+  toast.style.backgroundColor = colors[type] || colors.info;
+
+  document.body.appendChild(toast);
+
+  // Trigger animation
+  requestAnimationFrame(() => {
+    toast.style.transform = 'translateY(0)';
+    toast.style.opacity = '1';
+  });
+
+  // Auto-remove
+  setTimeout(() => {
+    toast.style.transform = 'translateY(100px)';
+    toast.style.opacity = '0';
+    toast.addEventListener('transitionend', () => toast.remove());
+  }, duration);
+}
 
 const statusPanel = document.getElementById('statusPanel');
 const statusDropdown = document.getElementById('statusDropdown');
@@ -22,6 +75,7 @@ const loginBtn = document.getElementById('loginBtn');
 const registerBtn = document.getElementById('registerBtn');
 const sendResetBtn = document.getElementById('sendResetBtn');
 const submitResetBtn = document.getElementById('submitResetBtn'); 
+
 
 // Buttons to switch popups
 const showRegisterBtn = document.getElementById('showRegisterPopupBtn');
@@ -50,6 +104,7 @@ let driverMarker = null;
 let truckMarkers = {}; 
 let truckPath = null; 
 let truckPathCoords = []; 
+
 
 // --- Configuration ---
 let DRIVER_TRUCK_ID = localStorage.getItem('truckId') || 'Default-Truck-ID';
@@ -178,6 +233,7 @@ statusButtons.forEach(button => {
     const percent = parseInt(button.getAttribute('data-value'), 10);
     if (!isNaN(percent)) {
       sendLoadUpdate(percent);
+      showToast(`Status Updated to ${percent}%`, 'success');
       if (statusOptions) statusOptions.style.display = 'none';
     }
   });
@@ -187,6 +243,7 @@ if (statusFinishedButton) {
   statusFinishedButton.addEventListener('click', () => {
     console.log('[Driver] "Finished Emptying" button clicked. Sending 0%.');
     sendLoadUpdate(0);
+    showToast('Status Updated to 0% (Finished)', 'success');
     if (statusOptions) statusOptions.style.display = 'none';
   });
 }
@@ -198,13 +255,13 @@ document.addEventListener('click', (event) => {
    }
 });
 
-updateStatusHeader(currentLoadPercent); 
+updateStatusHeader(currentLoadPercent);
 
 
 // --- Popup Switching Logic ---
 
 function showPopup(popupToShow) {
-  [loginPopup, registerPopup, forgotPasswordPopup, resetWithCodePopup].forEach(p => { 
+  [loginPopup, registerPopup, forgotPasswordPopup, resetWithCodePopup, logoutPopup].forEach(p => { 
     if (p) p.classList.remove('show');
   });
   if (popupToShow) popupToShow.classList.add('show');
@@ -212,19 +269,99 @@ function showPopup(popupToShow) {
 }
 
 function hideAllPopups() {
-   [loginPopup, registerPopup, forgotPasswordPopup, resetWithCodePopup].forEach(p => { 
+   [loginPopup, registerPopup, forgotPasswordPopup, resetWithCodePopup, logoutPopup].forEach(p => { 
     if (p) p.classList.remove('show');
   });
    if (document.body) document.body.classList.remove('locked');
 }
-const existingDriver = localStorage.getItem('driverName');
-if (existingDriver) {
-    document.body.classList.remove('locked');
-    hideAllPopups();
-    initializeMapAndMarker();
-    loadAndDrawMapData();
-    loadSchedule();
+
+// --- Logout Functionality ---
+const logoutBtn = document.getElementById('logoutBtn');
+const logoutPopup = document.getElementById('logoutPopup');
+const confirmLogout = document.getElementById('confirmLogout');
+const cancelLogout = document.getElementById('cancelLogout');
+
+if (logoutBtn) {
+  logoutBtn.addEventListener('click', () => {
+    console.log('[Logout] Logout button clicked, showing confirmation popup');
+    showPopup(logoutPopup);
+  });
 }
+
+if (cancelLogout) {
+  cancelLogout.addEventListener('click', () => {
+    console.log('[Logout] Cancel logout clicked');
+    hideAllPopups();
+  });
+}
+
+if (confirmLogout) {
+  confirmLogout.addEventListener('click', async () => {
+    console.log('[Logout] Confirm logout clicked, processing logout...');
+    
+    try {
+      // Stop tracking and clear geolocation
+      if (trackingEnabled) {
+        setTracking(false);
+        socket.emit('driver:tracking_stopped', { truckId: DRIVER_TRUCK_ID });
+      }
+
+      // Clear localStorage
+      localStorage.removeItem('driverName');
+      localStorage.removeItem('driverBarangay');
+      localStorage.removeItem('truckId');
+      DRIVER_TRUCK_ID = 'Default-Truck-ID';
+      console.log('[Logout] Cleared localStorage and reset DRIVER_TRUCK_ID');
+      
+
+      // Clear map elements
+      if (map) {
+        if (driverMarker && map.hasLayer(driverMarker)) {
+          map.removeLayer(driverMarker);
+          driverMarker = null;
+        }
+        if (truckPath && map.hasLayer(truckPath)) {
+          map.removeLayer(truckPath);
+          truckPath = null;
+        }
+        truckPathCoords = [];
+        Object.values(truckMarkers).forEach(marker => {
+          if (map.hasLayer(marker)) map.removeLayer(marker);
+        });
+        truckMarkers = {};
+        map.remove();
+        map = null;
+        console.log('[Logout] Cleared map and markers');
+      }
+
+      // Update UI
+      const driverNameDisplay = document.getElementById('driverNameDisplay');
+      if (driverNameDisplay) driverNameDisplay.textContent = '';
+      if (toggleEl) {
+        toggleEl.checked = false;
+        toggleEl.disabled = false;
+        labelEl.textContent = 'STOP';
+        labelEl.style.color = 'red';
+      }
+
+      // Show login popup
+      hideAllPopups();
+      showPopup(loginPopup);
+      console.log('[Logout] Logout complete, showing login popup');
+      showToast('Logged Out Successfully', 'success');
+    } catch (err) {
+      console.error('[Logout] Error during logout:', err);
+      showToast('Logout Failed', 'error');
+      // Even if there's an error, proceed to show login popup
+      hideAllPopups();
+      showPopup(loginPopup);
+      alert('Logout completed with issues. Please try logging in again.');
+    }
+  });
+} else {
+  console.warn('[Logout] Logout popup or buttons not found');
+}
+
 // Wire up the buttons to switch popups
 if (showRegisterBtn) showRegisterBtn.addEventListener('click', () => showPopup(registerPopup));
 if (showForgotPasswordBtn) showForgotPasswordBtn.addEventListener('click', () => showPopup(forgotPasswordPopup));
@@ -282,6 +419,7 @@ if (registerForm && registerBtn) {
 
             registerMsg.textContent = result.message || 'Registration successful! Redirecting to login...';
             registerMsg.style.color = 'lightgreen';
+            showToast('Registration Successful', 'success');
             registerForm.reset();
             setTimeout(() => showPopup(loginPopup), 1500);
 
@@ -289,6 +427,7 @@ if (registerForm && registerBtn) {
             console.error('Driver registration error:', err);
             registerMsg.textContent = `Registration Error: ${err.message}`;
             registerMsg.style.color = 'red';
+            showToast('Registration Failed', 'error');
         } finally {
             registerBtn.textContent = 'Register';
             registerBtn.disabled = false;
@@ -311,55 +450,78 @@ if (loginForm && loginBtn) {
         if (!name || !password) {
             loginMsg.textContent = 'Please enter driver name and password.';
             loginMsg.style.color = 'orange';
-             return;
+            return;
         }
 
         loginBtn.textContent = 'Logging in...';
         loginBtn.disabled = true;
 
         try {
+            const controller = new AbortController(); // Add timeout handling for better UX
+            const timeoutId = setTimeout(() => controller.abort(), 15000); // 15s timeout
             const res = await fetch('/driver-login', {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ driverName: name, driverPassword: password })
+                body: JSON.stringify({ driverName: name, driverPassword: password }),
+                signal: controller.signal
             });
+            clearTimeout(timeoutId);
+
             const result = await res.json();
             if (!res.ok) throw new Error(result.error || `Login failed: ${res.status}`);
 
             // --- Login Successful ---
             loginMsg.textContent = result.message || 'Login successful!';
             loginMsg.style.color = 'lightgreen';
+            showToast('Login Successful', 'success');
 
             // Store driver info from server response
-            if (result.driver && result.driver.truckId) {
-                localStorage.setItem('driverName', result.driver.name);
+            if (result.driver) {
+                localStorage.setItem('driverName', result.driver.name || name);
                 localStorage.setItem('driverBarangay', result.driver.barangay || 'Unknown');
-                DRIVER_TRUCK_ID = result.driver.truckId; 
-                localStorage.setItem('truckId', DRIVER_TRUCK_ID); 
-                console.log(`Stored and updated truckId: ${DRIVER_TRUCK_ID}`);
+                DRIVER_TRUCK_ID = result.driver.truckId || `Driver-Truck-${result.driver?.id || name.replace(/\s+/g, '-')}`;
+                localStorage.setItem('truckId', DRIVER_TRUCK_ID);
+                console.log(`[Login] Stored and updated truckId: ${DRIVER_TRUCK_ID}`);
             } else {
-                 console.warn("Login response missing truckId. Assigning default.");
-                 DRIVER_TRUCK_ID = `Driver-Truck-${result.driver?.id || name.replace(/\s+/g, '-')}`;
-                 localStorage.setItem('truckId', DRIVER_TRUCK_ID);
-            }
-            if (result.driver && result.driver.name) {
-                 localStorage.setItem('driverName', result.driver.name);
+                console.warn("[Login] Login response missing driver data. Assigning default truckId.");
+                DRIVER_TRUCK_ID = `Driver-Truck-${name.replace(/\s+/g, '-')}`;
+                localStorage.setItem('truckId', DRIVER_TRUCK_ID);
+                localStorage.setItem('driverName', name); // Fallback to input name
             }
 
-            // Hide popup after a short delay
+            // Delay to show success message, then initialize UI
             setTimeout(() => {
                 hideAllPopups();
+                document.body.classList.remove('locked'); // Ensure body is unlocked
+
+                // Initialize map and other elements
                 initializeMapAndMarker();
                 loadAndDrawMapData();
                 loadSchedule();
 
-            }, 800);
+                // Update driver name display
+                const driverNameDisplay = document.getElementById('driverNameDisplay');
+                if (driverNameDisplay) {
+                    driverNameDisplay.textContent = localStorage.getItem('driverName') || 'Driver';
+                }
 
+                // Reset tracking toggle if needed
+                if (toggleEl) {
+                    toggleEl.checked = false;
+                    setTracking(false);
+                }
+
+                // Reset form for security
+                loginForm.reset();
+            }, 1500); // 1.5s delay for message visibility
 
         } catch (err) {
-            console.error('Driver login error:', err);
-            loginMsg.textContent = `Login Error: ${err.message}`;
+            console.error('[Login] Login error:', err);
+            loginMsg.textContent = err.name === 'AbortError'
+                ? 'Request timed out. Please try again.'
+                : (err.message || 'Login failed. Please check your credentials.');
             loginMsg.style.color = 'red';
+            showToast('Login Failed', 'error');
         } finally {
             loginBtn.textContent = 'Login';
             loginBtn.disabled = false;
@@ -401,6 +563,7 @@ if (forgotPasswordForm && sendResetBtn) {
             // --- MODIFICATION: On success, show the *next* popup ---
             forgotMsg.textContent = result.message || 'Reset code sent!';
             forgotMsg.style.color = 'var(--accent, lightgreen)';
+            showToast('Reset Code Sent', 'success');
 
             // Populate the hidden phone field in the *next* form
             const hiddenPhoneField = document.getElementById('resetPhoneHidden');
@@ -420,6 +583,7 @@ if (forgotPasswordForm && sendResetBtn) {
             console.error('Forgot password error:', err);
             forgotMsg.textContent = `Error: ${err.message}`;
             forgotMsg.style.color = 'red';
+            showToast('Failed to Send Reset Code', 'error');
         } finally {
             // Re-enable button
             sendResetBtn.textContent = 'Send Reset Code';
@@ -472,6 +636,7 @@ if (resetWithCodeForm && submitResetBtn) {
             // Success!
             resetCodeMsg.textContent = result.message || 'Password reset successful!';
             resetCodeMsg.style.color = 'var(--accent, lightgreen)';
+            showToast('Password Updated Successfully', 'success');
             
             // Redirect to login page after a delay
             setTimeout(() => {
@@ -484,6 +649,7 @@ if (resetWithCodeForm && submitResetBtn) {
             console.error('Password reset error:', err);
             resetCodeMsg.textContent = `Error: ${err.message}`;
             resetCodeMsg.style.color = 'red';
+            showToast('Password Update Failed', 'error');
         } finally {
             submitResetBtn.textContent = 'Update Password';
             submitResetBtn.disabled = false;
@@ -525,6 +691,7 @@ function initializeMapAndMarker() {
     truckMarkers[DRIVER_TRUCK_ID] = driverMarker; 
     console.log(`Driver marker created/updated for ${DRIVER_TRUCK_ID}`);
 
+    
     driverMarker.on('dragend', function(e) {
         const newLatLng = driverMarker.getLatLng();
         console.log(`[Driver] Truck marker dragged to new position: Lat=${newLatLng.lat}, Lon=${newLatLng.lng}`);
@@ -541,6 +708,7 @@ function initializeMapAndMarker() {
         console.log("Removed simulator marker.");
     }
 }
+
 
 // --- Update Truck Path ---
 function updateTruckPath() {
@@ -746,6 +914,7 @@ function setTracking(on) {
     startGeoWatch(); 
     if (DRIVER_TRUCK_ID && DRIVER_TRUCK_ID !== 'Default-Truck-ID') {
         socket.emit('driver:tracking_started', { truckId: DRIVER_TRUCK_ID }); 
+        showToast('Tracking Started', 'success');
     } else {
          console.warn("Cannot emit driver:tracking_started, invalid DRIVER_TRUCK_ID");
          toggleEl.checked = false;
@@ -753,6 +922,7 @@ function setTracking(on) {
          labelEl.textContent = 'STOP';
          labelEl.style.color = 'red';
          alert("Please login first to start tracking.");
+         showToast('Cannot Start Tracking - Please Login', 'error');
     }
   } else {
     labelEl.textContent = 'STOP';
@@ -761,6 +931,7 @@ function setTracking(on) {
     if (DRIVER_TRUCK_ID && DRIVER_TRUCK_ID !== 'Default-Truck-ID') {
         socket.emit('driver:tracking_stopped', { truckId: DRIVER_TRUCK_ID }); 
     }
+    showToast('Tracking Stopped', 'info');
   }
 }
 if (toggleEl && labelEl) {
@@ -834,20 +1005,17 @@ document.addEventListener("DOMContentLoaded", () => {
     const showLoginParam = urlParams.get('action') === 'login';
     const storedTruckId = localStorage.getItem('truckId');
     
-    // Show login if explicitly requested OR if not already logged in
     if (showLoginParam || !storedTruckId) {
         if (showLoginParam) console.log("URL parameter found, showing login popup.");
         else console.log("Not logged in, showing login popup.");
         
         showPopup(loginPopup);
-        // Ensure map is NOT initialized yet
         if (map) {
              console.warn("Map was initialized before login, removing.");
              map.remove();
              map = null;
         }
     } else {
-        // Already logged in and not redirected to login
         console.log(`Already logged in as ${storedTruckId}. Initializing map.`);
         DRIVER_TRUCK_ID = storedTruckId; 
         hideAllPopups(); 
@@ -858,5 +1026,10 @@ document.addEventListener("DOMContentLoaded", () => {
              toggleEl.checked = false; 
              setTracking(false); 
         }
+        const driverNameDisplay = document.getElementById('driverNameDisplay');
+        if (driverNameDisplay) {
+            driverNameDisplay.textContent = localStorage.getItem('driverName') || 'Driver';
+        }
     }
 });
+

@@ -50,7 +50,7 @@
 
       <section class="bottom-controls">
         <div class="barangay-display">
-          <strong>Registered:</strong> <span id="savedBarangay">Not registered</span>
+          <strong>Trip counter:</strong> <span id="trip-card">0</span>
         </div>
         <button id="openRegister" class="primary-btn">Register</button>
       </section>
@@ -112,5 +112,10 @@
       if(popup) popup.addEventListener('click', (e)=> { if (e.target === popup) popup.classList.remove('show'); });
     });
   </script>
+  <script>
+  const socket = io();
+  window.socket = socket;
+  socket.on('connect', () => console.log('[Schedule] Connected'));
+</script>
 </body>
 </html>

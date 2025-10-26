@@ -5,14 +5,40 @@
   <title>Trashtrackify — Schedule</title>
   <meta name="viewport" content="width=device-width,initial-scale=1" />
   <link rel="stylesheet" href="css/regi.css" />
+  <style>
+    /* Add custom styles for the truck icon with driver name */
+    .brand .logo {
+      position: relative;
+      display: inline-block;
+    }
+    .driver-name-tooltip {
+      visibility: hidden;
+      width: 120px;
+      background-color: #333;
+      color: #fff;
+      text-align: center;
+      padding: 5px;
+      border-radius: 4px;
+      position: absolute;
+      z-index: 1;
+      bottom: 125%; /* Position above the icon */
+      left: 50%;
+      transform: translateX(-50%);
+      font-size: 12px;
+      white-space: nowrap;
+    }
+    .brand .logo:hover .driver-name-tooltip {
+      visibility: visible;
+    }
+  </style>
 </head>
-<body>
+<body class="driver-page">
   <header class="top-bar">
     <div class="brand">
       <img src="img/garbage-truck.png" alt="" class="logo">
       <span class="app-title">TrashTracktify</span>
+      <span class="driver-name-tooltip" id="driverNameTooltip"></span>
     </div>
-    <span id="driverNameDisplay" class="driver-name"></span>
   </header>
   <main id="content">
     <div class="container">
@@ -43,7 +69,7 @@
       </section>
       <section class="bottom-controls">
         <div class="barangay-display">
-          <strong>Trip Count:</strong> <span id="savedBarangay">0</span>
+          <strong>Trip Count:</strong> <span id="tripCount">0</span>
         </div>
       </section>
     </div>
@@ -63,16 +89,20 @@
     </div>
   </div>
   <script src="https://cdn.socket.io/4.7.2/socket.io.min.js"></script>
-  <script src="js/register.js"></script>
-  <script>
-    document.addEventListener('DOMContentLoaded', () => {
-      if (typeof initTopInfo === 'function') initTopInfo();
-      if (typeof generateCalendar === 'function') generateCalendar();
-      if (typeof displayBarangay === 'function') displayBarangay();
-      const datePopup = document.getElementById('datePopup');
-      document.getElementById('closeDatePopup')?.addEventListener('click', () => datePopup.classList.remove('show'));
-      datePopup.addEventListener('click', (e) => { if (e.target === datePopup) datePopup.classList.remove('show'); });
-    });
-  </script>
+  <script src="js/register.js" defer></script>
+  <script src="js/driver-schedule.js" defer></script>
+<script>
+  const socket = io();
+  window.socket = socket;
+
+  socket.on('connect', () => {
+    console.log('[Driver-Schedule] Connected to server');
+  });
+
+  socket.on('connect_error', (err) => {
+    console.error('[Driver-Schedule] Socket.IO connection error:', err.message);
+  });
+</script>
+  
 </body>
 </html>

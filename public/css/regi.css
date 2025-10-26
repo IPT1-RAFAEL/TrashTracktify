@@ -369,6 +369,9 @@ main#content {
 .nav-item:hover {
   color: var(--accent);
 }
+.toast {
+  font-family: inherit;
+}
 
 /* Responsiveness */
 @media (max-width: 720px) {

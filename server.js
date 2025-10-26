@@ -90,26 +90,26 @@ app.get('/users', async (req, res) => {
     }
 });
 
-// POST /register - Register a new user
 app.post('/register', async (req, res) => {
-    const { name, phone, barangay, street } = req.body;
-    if (!name || !phone || !barangay || !street) return res.status(400).json({ error: 'Missing required fields' });
-    if (!['Tugatog', 'Acacia', 'Tinajeros'].includes(barangay)) return res.status(400).json({ error: 'Invalid barangay.' });
-    if (!/^09\d{9}$/.test(phone)) return res.status(400).json({ error: 'Invalid phone number format.' });
+  const { name, phone, barangay, street } = req.body;
+  if (!name || !phone || !barangay || !street) return res.status(400).json({ error: 'Missing required fields' });
+  if (!/^09\d{9}$/.test(phone)) return res.status(400).json({ error: 'Invalid phone number format.' });
 
-    let conn;
-    try {
-        conn = await dbPool.getConnection();
-        await conn.query('INSERT INTO users (name, phone, barangay, street) VALUES (?, ?, ?, ?)', [name, phone, barangay, street]);
-        io.emit('registered-stats-update'); // Notify clients
-        res.json({ message: '✅ Registration successful' });
-    } catch (err) {
-        if (err.code === 'ER_DUP_ENTRY') return res.status(400).json({ error: 'Phone number already registered.' });
-        console.error(`[DB] Error registering user: ${err.message}`);
-        res.status(500).json({ error: `Failed to register: ${err.message}` });
-    } finally {
-        if (conn) conn.release();
-    }
+  let conn;
+  try {
+    conn = await dbPool.getConnection();
+    const [existing] = await conn.query('SELECT id FROM users WHERE phone = ?', [phone]);
+    if (existing.length > 0) return res.status(400).json({ error: 'Phone number already registered.' });
+    await conn.query('INSERT INTO users (name, phone, barangay, street) VALUES (?, ?, ?, ?)', [name, phone, barangay, street]);
+    io.emit('registered-stats-update');
+    res.json({ message: '✅ Registration successful' });
+  } catch (err) {
+    console.error(`[DB] Error registering user: ${err.message}`);
+    if (err.code === 'ER_DUP_ENTRY') return res.status(400).json({ error: 'Phone number already registered.' });
+    res.status(500).json({ error: `Failed to register: ${err.message}` });
+  } finally {
+    if (conn) conn.release();
+  }
 });
 
 // GET /schedule - Fetch collection schedule
@@ -228,14 +228,14 @@ app.get('/stats/current-capacity', (req, res) => {
 
 // Get total round trips
 app.get('/stats/round-trips', (req, res) => {
+    const truckId = req.query.truckId;
     const stats = app.locals.truckStats || {};
+    if (truckId) {
+        const count = stats[truckId]?.roundTrips || 0;
+        return res.json({ truckId, count });
+    }
     let totalTrips = 0;
-    
-    // Sum up trips from all trucks
-    Object.values(stats).forEach(truck => {
-        totalTrips += (truck.roundTrips || 0);
-    });
-    
+    Object.values(stats).forEach(truck => { totalTrips += (truck.roundTrips || 0); });
     res.json({ count: totalTrips });
 });
 

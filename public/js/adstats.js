@@ -1,5 +1,59 @@
 const socket = io("https://trashtracktify.onrender.com");
 
+// === TOAST NOTIFICATION SYSTEM ===
+function showToast(message, type = 'success', duration = 2000) {
+  // Remove any existing toast
+  const existing = document.querySelector('.toast');
+  if (existing) existing.remove();
+
+  const toast = document.createElement('div');
+  toast.className = `toast toast-${type}`;
+  toast.textContent = message;
+
+  // Style it
+  Object.assign(toast.style, {
+    position: 'fixed',
+    bottom: '20px',
+    right: '20px',
+    minWidth: '200px',
+    padding: '12px 20px',
+    borderRadius: '8px',
+    color: 'white',
+    fontWeight: '600',
+    fontSize: '0.95rem',
+    boxShadow: '0 4px 12px rgba(0,0,0,0.2)',
+    transform: 'translateY(100px)',
+    opacity: '0',
+    transition: 'all 0.3s ease',
+    zIndex: '10000',
+    pointerEvents: 'none'
+  });
+
+  // Color by type
+  const colors = {
+    success: '#4caf50',
+    error: '#f44336',
+    info: '#2196f3',
+    warning: '#ff9800'
+  };
+  toast.style.backgroundColor = colors[type] || colors.info;
+
+  document.body.appendChild(toast);
+
+  // Trigger animation
+  requestAnimationFrame(() => {
+    toast.style.transform = 'translateY(0)';
+    toast.style.opacity = '1';
+  });
+
+  // Auto-remove
+  setTimeout(() => {
+    toast.style.transform = 'translateY(100px)';
+    toast.style.opacity = '0';
+    toast.addEventListener('transitionend', () => toast.remove());
+  }, duration);
+}
+
 // Elements
 const barangayListEl = document.getElementById('barangayList');
 const editPopup = document.getElementById('editSchedulePopup');
@@ -9,11 +63,6 @@ const editTimeInput = document.getElementById('editTime');
 const editMsg = document.getElementById('editMsg');
 const editForm = document.getElementById('editScheduleForm');
 const cancelEditBtn = document.getElementById('cancelEditBtn');
-const resetPasswordPopup = document.getElementById('adminResetPasswordPopup');
-const resetPasswordForm = document.getElementById('adminResetPasswordForm');
-const submitResetBtn = document.getElementById('submitAdminResetBtn');
-const backToLoginFromReset = document.getElementById('backToLoginFromReset');
-const resetMsg = document.getElementById('adminResetMsg');
 
 const calendarBody = document.getElementById('calendarBody');
 const monthLabel = document.getElementById('monthLabel');
@@ -26,34 +75,6 @@ const roundCountEl = document.getElementById('roundCount');
 // Residents table
 const residentTableBody = document.querySelector('#residentTable tbody');
 
-// === NEW: Admin Auth Popup Elements ===
-const loginPopup = document.getElementById('adminLoginPopup');
-const registerPopup = document.getElementById('adminRegisterPopup');
-const forgotPasswordPopup = document.getElementById('adminForgotPasswordPopup');
-
-const loginForm = document.getElementById('adminLoginForm');
-const registerForm = document.getElementById('adminRegisterForm');
-const forgotPasswordForm = document.getElementById('adminForgotPasswordForm');
-
-const loginBtn = document.getElementById('adminLoginBtn');
-const registerBtn = document.getElementById('adminRegisterBtn');
-const sendResetBtn = document.getElementById('sendAdminResetBtn');
-
-// Buttons to switch popups
-const showRegisterBtn = document.getElementById('showAdminRegisterBtn');
-const showForgotPasswordBtn = document.getElementById('showAdminForgotBtn');
-const backToLoginFromRegister = document.getElementById('backToLoginFromRegister');
-const backToLoginFromForgot = document.getElementById('backToLoginFromForgot');
-
-// Header buttons
-const adminLoginHeaderBtn = document.getElementById('adminLoginHeaderBtn');
-const adminLogoutBtn = document.getElementById('adminLogoutBtn');
-
-// Message areas
-const loginMsg = document.getElementById('adminLoginMsg');
-const registerMsg = document.getElementById('adminRegisterMsg');
-const forgotMsg = document.getElementById('adminForgotMsg');
-// === END NEW ===
 
 
 // In-memory data
@@ -75,263 +96,7 @@ function setRoundTrips(n) {
 }
 
 
-// --- NEW: Popup Switching Logic ---
-function showPopup(popupToShow) {
-  // Hide all popups first
-  [loginPopup, registerPopup, forgotPasswordPopup, resetPasswordPopup].forEach(p => {
-    if (p) p.classList.remove('show');
-  });
-  // Show the requested one
-  if (popupToShow) popupToShow.classList.add('show');
-  // Lock body scroll
-  if (document.body) document.body.classList.add("locked");
-}
 
-function hideAllPopups() {
-   [loginPopup, registerPopup, forgotPasswordPopup].forEach(p => {
-    if (p) p.classList.remove('show');
-  });
-   if (document.body) document.body.classList.remove('locked');
-}
-
-// Wire up the buttons to switch popups
-if (showRegisterBtn) showRegisterBtn.addEventListener('click', () => showPopup(registerPopup));
-if (showForgotPasswordBtn) showForgotPasswordBtn.addEventListener('click', () => showPopup(forgotPasswordPopup));
-if (backToLoginFromRegister) backToLoginFromRegister.addEventListener('click', () => showPopup(loginPopup));
-if (backToLoginFromForgot) backToLoginFromForgot.addEventListener('click', () => showPopup(loginPopup));
-if (backToLoginFromReset) backToLoginFromReset.addEventListener('click', () => showPopup(loginPopup));
-// --- END NEW ---
-
-
-// --- NEW: Admin Auth Form Handling ---
-
-// Registration
-if (registerForm && registerBtn) {
-    registerForm.addEventListener('submit', async (e) => {
-        e.preventDefault();
-        registerMsg.textContent = '';
-        registerMsg.style.color = ''; 
-
-        const name = document.getElementById('regAdminName')?.value.trim();
-        const phone = document.getElementById('regAdminPhone')?.value.trim();
-        const password = document.getElementById('regAdminPassword')?.value.trim();
-
-        if (!name || !phone || !password) {
-            registerMsg.textContent = 'Please fill in all fields.';
-            registerMsg.style.color = 'orange';
-            return;
-        }
-        if (!/^09\d{9}$/.test(phone)) {
-             registerMsg.textContent = 'Invalid phone (must be 09xxxxxxxxx).';
-             registerMsg.style.color = 'orange';
-             return;
-        }
-        if (password.length < 6) {
-             registerMsg.textContent = 'Password must be at least 6 characters.';
-             registerMsg.style.color = 'orange';
-             return;
-        }
-
-        registerBtn.textContent = 'Registering...';
-        registerBtn.disabled = true;
-
-        try {
-            // !! IMPORTANT: You will need to create this '/admin-register' endpoint on your server
-            const res = await fetch('/admin-register', {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ regName: name, regPhone: phone, regPassword: password })
-            });
-            const result = await res.json();
-            if (!res.ok) throw new Error(result.error || `Registration failed: ${res.status}`);
-
-            registerMsg.textContent = result.message || 'Registration successful! Redirecting to login...';
-            registerMsg.style.color = 'var(--accent)';
-            registerForm.reset();
-            setTimeout(() => showPopup(loginPopup), 1500);
-
-        } catch (err) {
-            console.error('Admin registration error:', err);
-            registerMsg.textContent = `Registration Error: ${err.message}`;
-            registerMsg.style.color = 'red';
-        } finally {
-            registerBtn.textContent = 'Register';
-            registerBtn.disabled = false;
-        }
-    });
-}
-
-// Login
-if (loginForm && loginBtn) {
-    loginForm.addEventListener('submit', async (e) => {
-        e.preventDefault();
-        loginMsg.textContent = '';
-        loginMsg.style.color = '';
-
-        const name = document.getElementById('adminName')?.value.trim();
-        const password = document.getElementById('adminPassword')?.value.trim();
-
-        if (!name || !password) {
-            loginMsg.textContent = 'Please enter admin name and password.';
-            loginMsg.style.color = 'orange';
-             return;
-        }
-
-        loginBtn.textContent = 'Logging in...';
-        loginBtn.disabled = true;
-
-        try {
-            // !! IMPORTANT: You will need to create this '/admin-login' endpoint on your server
-            const res = await fetch('/admin-login', { 
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ adminName: name, adminPassword: password })
-            });
-            const result = await res.json();
-            if (!res.ok) throw new Error(result.error || `Login failed: ${res.status}`);
-
-            loginMsg.textContent = result.message || 'Login successful!';
-            loginMsg.style.color = 'var(--accent)';
-
-            // Simulate session by storing a token/flag
-            localStorage.setItem('adminAuthenticated', 'true'); 
-
-            setTimeout(() => {
-                hideAllPopups();
-                adminLoginHeaderBtn.style.display = 'none';
-                adminLogoutBtn.style.display = 'block';
-            }, 800);
-
-        } catch (err) {
-            console.error('Admin login error:', err);
-            loginMsg.textContent = `Login Error: ${err.message}`;
-            loginMsg.style.color = 'red';
-        } finally {
-            loginBtn.textContent = 'Login';
-            loginBtn.disabled = false;
-        }
-    });
-}
-
-// Forgot Password
-if (forgotPasswordForm && sendResetBtn) {
-    forgotPasswordForm.addEventListener('submit', async (e) => {
-        e.preventDefault();
-        forgotMsg.textContent = '';
-        forgotMsg.style.color = '';
-
-        const phone = document.getElementById('forgotAdminPhone')?.value.trim();
-        if (!phone || !/^09\d{9}$/.test(phone)) {
-            forgotMsg.textContent = 'Please enter a valid phone number (09xxxxxxxxx).';
-            forgotMsg.style.color = 'orange';
-            return;
-        }
-
-        sendResetBtn.textContent = 'Sending...';
-        sendResetBtn.disabled = true;
-
-        try {
-            const res = await fetch('/admin-forgot-password', {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ resetPhone: phone })
-            });
-            const result = await res.json();
-            if (!res.ok) throw new Error(result.error || 'Failed to send reset code');
-
-            forgotMsg.textContent = result.message || 'Reset code sent! Please check your phone.';
-            forgotMsg.style.color = 'var(--accent)';
-            forgotPasswordForm.reset();
-            setTimeout(() => showPopup(resetPasswordPopup), 1500); // Switch to reset popup
-        } catch (err) {
-            console.error('Forgot password error:', err);
-            forgotMsg.textContent = `Error: ${err.message}`;
-            forgotMsg.style.color = 'red';
-        } finally {
-            sendResetBtn.textContent = 'Send Reset Link';
-            sendResetBtn.disabled = false;
-        }
-    });
-}
-
-// Reset Password
-if (resetPasswordForm && submitResetBtn) {
-    resetPasswordForm.addEventListener('submit', async (e) => {
-        e.preventDefault();
-        resetMsg.textContent = '';
-        resetMsg.style.color = '';
-
-        const phone = document.getElementById('resetAdminPhone')?.value.trim();
-        const token = document.getElementById('resetCode')?.value.trim();
-        const newPassword = document.getElementById('resetNewPassword')?.value.trim();
-        const confirmPassword = document.getElementById('resetConfirmPassword')?.value.trim();
-
-        if (!phone || !token || !newPassword || !confirmPassword) {
-            resetMsg.textContent = 'Please fill in all fields.';
-            resetMsg.style.color = 'orange';
-            return;
-        }
-        if (!/^09\d{9}$/.test(phone)) {
-            resetMsg.textContent = 'Invalid phone number (must be 09xxxxxxxxx).';
-            resetMsg.style.color = 'orange';
-            return;
-        }
-        if (!/^\d{6}$/.test(token)) {
-            resetMsg.textContent = 'Code must be 6 digits.';
-            resetMsg.style.color = 'orange';
-            return;
-        }
-        if (newPassword !== confirmPassword) {
-            resetMsg.textContent = 'Passwords do not match.';
-            resetMsg.style.color = 'orange';
-            return;
-        }
-        if (newPassword.length < 6) {
-            resetMsg.textContent = 'Password must be at least 6 characters.';
-            resetMsg.style.color = 'orange';
-            return;
-        }
-
-        submitResetBtn.textContent = 'Resetting...';
-        submitResetBtn.disabled = true;
-
-        try {
-            const res = await fetch('/admin-reset-password', {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ phone, token, newPassword, confirmPassword })
-            });
-            const result = await res.json();
-            if (!res.ok) throw new Error(result.error || 'Failed to reset password');
-
-            resetMsg.textContent = result.message || 'Password reset successful! Redirecting to login...';
-            resetMsg.style.color = 'var(--accent)';
-            resetPasswordForm.reset();
-            setTimeout(() => showPopup(loginPopup), 1500);
-        } catch (err) {
-            console.error('Reset password error:', err);
-            resetMsg.textContent = `Error: ${err.message}`;
-            resetMsg.style.color = 'red';
-        } finally {
-            submitResetBtn.textContent = 'Reset Password';
-            submitResetBtn.disabled = false;
-        }
-    });
-}
-
-// Header button listeners
-if (adminLoginHeaderBtn) {
-    adminLoginHeaderBtn.addEventListener('click', () => showPopup(loginPopup));
-}
-if (adminLogoutBtn) {
-    adminLogoutBtn.addEventListener('click', () => {
-        localStorage.removeItem('adminAuthenticated');
-        adminLoginHeaderBtn.style.display = 'block';
-        adminLogoutBtn.style.display = 'none';
-        showPopup(loginPopup);
-        console.log('Admin logged out');
-    });
-}
 
 
 // --- Data Loading ---
@@ -453,11 +218,6 @@ function renderBarangays() {
     
     // Save button logic
     saveBtn.addEventListener('click', async () => {
-      if (!localStorage.getItem('adminAuthenticated')) {
-        alert('Please login to edit the schedule.');
-        showPopup(loginPopup);
-        return;
-      }
 
       const start_time = timeInput.value + ':00';
       
@@ -480,6 +240,7 @@ function renderBarangays() {
         if (!res.ok) throw new Error('Failed to save');
         
         saveBtn.textContent = 'OK!';
+        showToast('Time Set Successfully', 'success');
 
         // Update in-memory data
         if (!SCHEDULE_LOOKUP[b]) SCHEDULE_LOOKUP[b] = {};
@@ -488,7 +249,7 @@ function renderBarangays() {
 
       } catch (err) {
         console.error(err);
-        alert('Error saving time: ' + err.message);
+        showToast('Failed to save time', 'error');
         saveBtn.textContent = 'Fail';
       } finally {
         setTimeout(() => {
@@ -577,27 +338,18 @@ editForm?.addEventListener('submit', async (e) => {
         const result = await res.json();
         if (!res.ok) throw new Error(result.error || 'Save failed');
         editMsg.textContent = 'Saved';
+        showToast('Schedule Updated Successfully', 'success');
         setTimeout(closeEditPopup, 600);
     } catch (err) {
         console.error('save schedule error:', err);
         editMsg.textContent = err.message || 'Save failed';
+        showToast('Failed to update schedule', 'error');
     }
 });
 
 
-// --- Initial Load ---
-async function loadInitial() {
-    if (localStorage.getItem('adminAuthenticated') === 'true') {
-        adminLoginHeaderBtn.style.display = 'none';
-        adminLogoutBtn.style.display = 'block';
-        hideAllPopups(); 
-    } else {
-        adminLoginHeaderBtn.style.display = 'block';
-        adminLogoutBtn.style.display = 'none';
-        showPopup(loginPopup); 
-    }
-    // --- END NEW ---
 
+async function loadInitial() {
     try {
         await loadSchedule();
         await loadCalendarEvents();
