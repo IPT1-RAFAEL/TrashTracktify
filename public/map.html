@@ -8,7 +8,7 @@
   <link rel="stylesheet" href="css/map.css" />
 </head>
 <body>
-  <!-- Top nav -->
+
   <header class="top-nav" role="banner">
     <div class="top-nav-inner">
       <div class="brand">
@@ -18,12 +18,10 @@
     </div>
   </header>
 
-  <!-- Main content -->
   <main id="content">
     <div class="map-wrapper">
       <div id="map" role="application" aria-label="Map showing truck locations"></div>
 
-      <!-- Truck status overlay -->
       <aside class="truck-status" id="truckStatus" aria-live="polite" aria-atomic="true">
         <div class="truck-status-card">
           <div class="ts-title">Truck Status</div>
@@ -40,12 +38,12 @@
         </div>
       </aside>
 
-      <!-- Center locate button -->
+
       <button id="centerBtn" class="center-btn" title="Center on truck" aria-label="Center map">📍</button>
     </div>
   </main>
 
-  <!-- Bottom navigation (Map active) -->
+
   <nav class="bottom-nav" role="navigation" aria-label="Main navigation">
     <a class="nav-item active" href="map.html" aria-current="page">
       <img src="img/map.png" alt="">
@@ -56,6 +54,22 @@
     </a>
   </nav>
 
+  <div id="cpUpdatePopup" style="display:none; position:fixed; inset:0; background:rgba(0,0,0,0.8); z-index:2000; align-items:center; justify-content:center;">
+    <div style="background:#161616; padding:20px; border-radius:10px; width:90%; max-width:350px; text-align:center; box-shadow:0 0 20px rgba(0,255,133,0.3);">
+      <h3 style="color:#00ff85; margin-bottom:5px;" id="cpPopupTitle">Update Collection Point</h3>
+      <p style="color:#e8e8e8; margin-bottom:15px; font-size:0.9rem;" id="cpPopupBarangay">Current Capacity: 0%</p>
+      
+      <div id="capacityButtons" style="display:grid; grid-template-columns: 1fr 1fr; gap:10px;">
+        <button data-percent="25" style="padding:10px; background:#222; color:#fff; border:1px solid #444; border-radius:5px; cursor:pointer;">25% Full</button>
+        <button data-percent="50" style="padding:10px; background:#222; color:#fff; border:1px solid #444; border-radius:5px; cursor:pointer;">50% Full</button>
+        <button data-percent="75" style="padding:10px; background:#ff9800; color:#fff; border:none; border-radius:5px; font-weight:bold; cursor:pointer;">75% Full (High)</button>
+        <button data-percent="100" style="padding:10px; background:#f44336; color:#fff; border:none; border-radius:5px; font-weight:bold; cursor:pointer;">100% Full (Urgent)</button>
+      </div>
+      <p id="cpPopupMsg" style="color:#00ff85; margin-top:10px; min-height:1.2em;"></p>
+      <button id="closeCpPopup" style="margin-top:20px; padding:10px 15px; background:#00ff85; color:#000; border:none; border-radius:5px; font-weight:bold; cursor:pointer;">Close</button>
+    </div>
+  </div>
+  
   <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
   <script src="https://cdn.socket.io/4.7.2/socket.io.min.js"></script>
   <script src="js/map.js"></script>

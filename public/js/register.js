@@ -99,10 +99,8 @@ function showToast(message, type = 'success', duration = 2000) {
 
 // Data holders (moved to global scope)
 const daysOfWeek = ['MON', 'TUE', 'WED', 'THU', 'FRI', 'SAT', 'SUN'];
-let allStreetsData = {};
+let allCollectionPointsData = {};
 let CALENDAR_EVENTS = {}; // Redundant now, but kept for clarity; use window.CALENDAR_EVENTS
-
-// --- TRIP COUNTER ---
 let tripCount = 0;
 const tripCounterEl = document.getElementById('savedBarangay');
 
@@ -125,42 +123,56 @@ if (window.socket) {
 
 document.addEventListener('DOMContentLoaded', () => {
   // --- Street Data Loading and Dynamic Dropdown Logic ---
-  async function loadStreetData() {
+  async function loadCollectionPointData() {
     try {
-      const response = await fetch('/data/streets.json');
+      // ** Fetch CPs instead of streets.json **
+      const response = await fetch('/collection-points');
       if (!response.ok) throw new Error(`HTTP error! status: ${response.status}`);
-      allStreetsData = await response.json();
-      console.log('[Register] Street data loaded successfully.');
+      const cpList = await response.json();
+      
+      allCollectionPointsData = {};
+      // Group CPs by barangay
+      cpList.forEach(cp => {
+          if (!allCollectionPointsData[cp.barangay]) {
+              allCollectionPointsData[cp.barangay] = [];
+          }
+          allCollectionPointsData[cp.barangay].push({ name: cp.name }); 
+      });
+
+      console.log('[Register] Collection Point data loaded successfully.');
       if (barangaySelect) {
         barangaySelect.disabled = false;
-        updateStreetOptions();
+        updateStreetOptions(); // This function now handles CPs
       }
     } catch (error) {
-      console.error("[Register] Failed to load street data:", error);
+      console.error("[Register] Failed to load collection point data:", error);
       if (barangaySelect) barangaySelect.disabled = true;
       if (streetSelect) {
         streetSelect.disabled = true;
-        streetSelect.innerHTML = '<option value="" disabled selected>Error loading streets</option>';
+        streetSelect.innerHTML = '<option value="" disabled selected>Error loading Collection Points</option>';
       }
     }
   }
 
   function updateStreetOptions() {
-    if (!barangaySelect || !streetSelect || Object.keys(allStreetsData).length === 0) {
+    if (!barangaySelect || !streetSelect || Object.keys(allCollectionPointsData).length === 0) {
       return;
     }
     const selectedBarangay = barangaySelect.value;
     streetSelect.innerHTML = '';
     streetSelect.disabled = true;
-    if (selectedBarangay && allStreetsData[selectedBarangay]) {
+    if (selectedBarangay && allCollectionPointsData[selectedBarangay]) {
       streetSelect.disabled = false;
-      streetSelect.innerHTML = '<option value="" disabled selected>Select Street</option>';
-      const streetNames = [...new Set(allStreetsData[selectedBarangay].map(item => item.name))];
-      streetNames.sort();
-      streetNames.forEach(streetName => {
+      // *** Change dropdown prompt ***
+      streetSelect.innerHTML = '<option value="" disabled selected>Select Collection Point</option>';
+      
+      const cpNames = allCollectionPointsData[selectedBarangay].map(item => item.name);
+      cpNames.sort();
+      
+      cpNames.forEach(cpName => {
         const option = document.createElement('option');
-        option.value = streetName;
-        option.textContent = streetName;
+        option.value = cpName; // Value sent to the 'street' column is the CP name
+        option.textContent = cpName;
         streetSelect.appendChild(option);
       });
     } else {
@@ -271,8 +283,7 @@ document.addEventListener('DOMContentLoaded', () => {
     });
   }
 
-  // --- Initial Setup on Page Load ---
-  loadStreetData();
+  loadCollectionPointData();
   setTimeout(() => {
     if (typeof displayBarangay === 'function') displayBarangay();
   }, 100);

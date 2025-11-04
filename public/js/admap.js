@@ -27,10 +27,8 @@ let polygons = [];
 const markerColors = { Tugatog: "green", Acacia: "blue", Tinajeros: "red" };
 let initialCenterSet = false;
 let lastTruckLocation = null;
-
-// --- NEW: Variables to store paths for each truck ---
-let truckPaths = {}; // Object to hold coordinate arrays: { truckId: [[lat,lng], [lat,lng]], ... }
-let truckPathLayers = {}; // Object to hold Leaflet layer objects: { truckId: L.polyline(...), ... }
+let truckPaths = {};
+let truckPathLayers = {};
 let cpMarkers = {};
 let collectionPoints = [];
 
@@ -45,11 +43,11 @@ function drawPolygons() {
 }
 
 function getCpColor(percentage) {
-    if (percentage >= 100) return '#f44336';
-    if (percentage >= 75) return '#ff9800';
-    if (percentage >= 50) return '#2196f3';
-    if (percentage > 0) return '#4caf50';
-    return '#555';
+    if (percentage >= 100) return '#f44336'; // Red (Urgent)
+    if (percentage >= 75) return '#ff9800'; // Orange (High)
+    if (percentage >= 50) return '#2196f3'; // Blue (Moderate)
+    if (percentage > 0) return '#4caf50'; // Green (Low)
+    return '#555'; // Grey (Empty/Default)
 }
 
 function drawCollectionPoints(cpList) {
@@ -67,10 +65,9 @@ function drawCollectionPoints(cpList) {
             color: color,
             fillColor: color,
             fillOpacity: 0.9,
-            cpData: cp // Attach CP data to marker object
+            cpData: cp
         }).addTo(map)
-        .bindPopup(`<b>${name}</b><br>Brgy: ${barangay}<br>Capacity: ${capacity_percentage}%`)
-        .on('click', () => openCpUpdatePopup(cp)); // Open custom resident popup on click
+        .bindPopup(`<b>${name}</b><br>Brgy: ${barangay}<br>Capacity: ${capacity_percentage}%`);
 
         cpMarkers[cp_id] = marker;
     });
@@ -83,7 +80,7 @@ async function loadAndDrawMapData() {
       return;
   }
   try {
-    console.log("Loading map data...");
+    console.log("Loading map data for admin...");
     const polyRes = await fetch('/data/polygon.json');
     if (polyRes.ok) polygons = await polyRes.json();
     
@@ -93,8 +90,8 @@ async function loadAndDrawMapData() {
     if (cpRes.ok) cpList = await cpRes.json();
 
     drawPolygons();
-    drawCollectionPoints(cpList);
-    console.log("Map data drawn.");
+    drawCollectionPoints(cpList); 
+    console.log("Admin Map data drawn.");
   } catch (err) {
     console.error('Error loading map data', err);
   }
@@ -111,85 +108,6 @@ function setTruckStatus(percent, stateText){
   if (tsPercent) tsPercent.textContent = `${percent}%`;
   if (tsState) tsState.textContent = stateText || '';
 }
-
-const cpUpdatePopup = document.getElementById('cpUpdatePopup');
-const cpPopupTitle = document.getElementById('cpPopupTitle');
-const cpPopupBarangay = document.getElementById('cpPopupBarangay');
-const capacityButtons = document.getElementById('capacityButtons');
-const cpPopupMsg = document.getElementById('cpPopupMsg');
-const closeCpPopup = document.getElementById('closeCpPopup');
-let currentCpId = null;
-
-function openCpUpdatePopup(cp) {
-    if (!cpUpdatePopup) return;
-    currentCpId = cp.cp_id;
-    cpPopupTitle.textContent = cp.name;
-    cpPopupBarangay.textContent = `Barangay: ${cp.barangay} (Current: ${cp.capacity_percentage}%)`;
-    cpPopupMsg.textContent = '';
-    cpUpdatePopup.style.display = 'flex'; // Show the overlay
-}
-
-if (closeCpPopup) {
-    closeCpPopup.addEventListener('click', () => {
-        if (cpUpdatePopup) cpUpdatePopup.style.display = 'none';
-    });
-}
-
-if (capacityButtons) {
-    capacityButtons.addEventListener('click', async (e) => {
-        const button = e.target.closest('button[data-percent]');
-        if (!button || !currentCpId) return;
-
-        const percentage = button.getAttribute('data-percent');
-        cpPopupMsg.textContent = 'Sending update...';
-        button.disabled = true; // Disable button immediately
-        
-        try {
-            const res = await fetch('/cp/capacity', {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ cp_id: currentCpId, percentage: percentage, updated_by: 'Resident' })
-            });
-
-            const result = await res.json();
-            if (!res.ok) throw new Error(result.error || 'Failed to update capacity');
-
-            cpPopupMsg.textContent = `Capacity set to ${percentage}%!`;
-            
-            // Success: Update the local map data list
-            const localCp = collectionPoints.find(p => p.cp_id === currentCpId);
-            if(localCp) localCp.capacity_percentage = parseInt(percentage, 10);
-            
-            setTimeout(() => {
-                cpUpdatePopup.style.display = 'none';
-            }, 1000);
-
-        } catch (err) {
-            console.error('Capacity update error:', err);
-            cpPopupMsg.textContent = `Error: ${err.message}`;
-        } finally {
-             button.disabled = false; // Re-enable button
-        }
-    });
-}
-
-socket.on('cp-capacity-update', (data) => {
-    const { cp_id, percentage, name, barangay } = data;
-    const percentageNum = parseInt(percentage, 10);
-    const cp = collectionPoints.find(p => p.cp_id === cp_id);
-
-    if (cp) {
-        cp.capacity_percentage = percentageNum;
-        const marker = cpMarkers[cp_id];
-        if (marker && map.hasLayer(marker)) {
-            const color = getCpColor(percentageNum);
-            marker.setStyle({ fillColor: color, color: color });
-            marker.setRadius(8 + (percentageNum / 25)); // Update size
-            marker.setPopupContent(`<b>${name}</b><br>Brgy: ${barangay}<br>Capacity: ${percentageNum}%`);
-        }
-    }
-});
-// -
 
 // --- NEW: Function to update the path line on the map ---
 function updateTruckPathOnMap(truckId) {
@@ -352,6 +270,22 @@ if (centerBtn) {
     centerBtn.tabIndex = 0;
 }
 
+socket.on('cp-capacity-update', (data) => {
+    const { cp_id, percentage, name, barangay } = data;
+    const percentageNum = parseInt(percentage, 10);
+    const cp = collectionPoints.find(p => p.cp_id === cp_id);
+
+    if (cp) {
+        cp.capacity_percentage = percentageNum;
+        const marker = cpMarkers[cp_id];
+        if (marker && map.hasLayer(marker)) {
+            const color = getCpColor(percentageNum);
+            marker.setStyle({ fillColor: color, color: color });
+            marker.setRadius(8 + (percentageNum / 25));
+            marker.setPopupContent(`<b>${name}</b><br>Brgy: ${barangay}<br>Capacity: ${percentageNum}%`);
+        }
+    }
+});
 
 // Make popups open on marker click (already handled) and tidy mobile behavior
 const style = document.createElement('style');

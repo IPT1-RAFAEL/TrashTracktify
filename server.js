@@ -48,25 +48,38 @@ const dbPool = mysql.createPool({
 dbPool.getConnection().then(conn => { console.log('✅ DB Pool Connected'); conn.release(); }).catch(err => { console.error('❌ DB Pool Failed:', err.message); process.exit(1); });
 // --- End Database Pool ---
 
-let allStreetMarkers = [];
+let allCollectionPoints = [];
 
 // --- Load Map Data ---
 async function loadMapData() {
     try {
         await fs.readFile(path.join(__dirname, 'public/data/polygon.json'));
-        const rawStreets = await fs.readFile(path.join(__dirname, 'public/data/streets.json'));
-        const streetGroups = JSON.parse(rawStreets);
-        allStreetMarkers = [];
-        Object.entries(streetGroups).forEach(([barangay, streets]) => {
-            streets.forEach(st => {
-                if (st.coords?.length === 2 && !isNaN(st.coords[0]) && !isNaN(st.coords[1])) {
-                    allStreetMarkers.push({ ...st, barangay });
+        const rawCollectionPoints = await fs.readFile(path.join(__dirname, 'public/data/collection.json'));
+        const cpGroups = JSON.parse(rawCollectionPoints);
+        
+        allCollectionPoints = [];
+        let cpIdCounter = 1;
+
+        // Flatten data and initialize capacity
+        Object.entries(cpGroups).forEach(([barangay, points]) => {
+            points.forEach(cp => {
+                if (cp.coords?.length === 2 && !isNaN(cp.coords[0]) && !isNaN(cp.coords[1])) {
+                    allCollectionPoints.push({
+                        cp_id: cpIdCounter++,
+                        name: cp.name,
+                        barangay: barangay,
+                        latitude: cp.coords[0],
+                        longitude: cp.coords[1],
+                        capacity_percentage: 0
+                    });
                 }
             });
         });
-        console.log(`✅ Street marker data loaded: ${allStreetMarkers.length} markers`);
+
+        console.log(`✅ Collection Point data loaded: ${allCollectionPoints.length} points`);
+        
     } catch (err) {
-        console.error('[Server] Error loading map data:', err.message);
+        console.error('[Server] Error loading map data (Collection Points):', err.message);
     }
 }
 loadMapData();
@@ -88,6 +101,90 @@ app.get('/users', async (req, res) => {
     } finally {
         if (conn) conn.release();
     }
+});
+
+app.post('/cp/capacity', async (req, res) => {
+    const { cp_id, percentage, updated_by, action, truckId } = req.body;
+    const cpIdNum = parseInt(cp_id, 10);
+    const percentageNum = parseInt(percentage, 10);
+
+    if (!cpIdNum || percentageNum === undefined || isNaN(percentageNum) || percentageNum < 0 || percentageNum > 100) {
+        return res.status(400).json({ error: 'Invalid input for Collection Point update.' });
+    }
+
+    const cp = allCollectionPoints.find(p => p.cp_id === cpIdNum);
+
+    if (!cp) {
+        return res.status(404).json({ error: 'Collection Point not found.' });
+    }
+
+    // --- Core Logic: Update and Emit ---
+    cp.capacity_percentage = percentageNum;
+    
+    // Emit real-time update to all map clients
+    io.emit('cp-capacity-update', {
+        cp_id: cp.cp_id,
+        name: cp.name,
+        barangay: cp.barangay,
+        percentage: percentageNum,
+        updated_by: updated_by || 'System'
+    });
+
+    console.log(`[CP Update] CP ${cp.name} set to ${percentageNum}% by ${updated_by || 'Resident'}`);
+
+    // --- SMS Logic (Triggered by Driver Actions) ---
+    if (action && truckId) {
+        let conn;
+        try {
+            conn = await dbPool.getConnection();
+            const [users] = await conn.query('SELECT phone FROM users WHERE barangay = ?', [cp.barangay]);
+            const phoneNumbers = users
+                .map(u => u.phone)
+                .filter(p => /^09\d{9}$/.test(p))
+                .map(p => `+63${p.slice(1)}`);
+
+            let message = '';
+            
+            if (action === 'on-the-way') {
+                // SMS 1: Truck is on its way (Triggered by Driver, capacity has been reset to 0% above)
+                message = `Truck ID ${truckId} is on its way to ${cp.name} in barangay ${cp.barangay}.`;
+            } else if (action === 'arrived') {
+                // SMS 2: Truck has arrived
+                message = `Truck ID ${truckId} arrived at ${cp.name} in barangay ${cp.barangay}.`;
+            }
+
+            if (message && phoneNumbers.length > 0 && mqttClient?.connected) {
+                const mqttPayload = `batch_sms:${message} (${phoneNumbers.join(',')})`;
+                mqttClient.publish(MQTT_TOPIC, mqttPayload, (err) => {
+                    if (err) console.error('[MQTT] Failed publish driver action SMS:', err);
+                    else console.log(`[MQTT] Published driver action SMS (${action}) for ${cp.barangay}.`);
+                });
+            } else if (message) {
+                 console.warn(`[SMS] No recipients or MQTT not connected for action: ${action}.`);
+            }
+
+            // NEW: Log collection event for 'on-the-way' (confirm button trigger)
+            if (action === 'on-the-way') {
+                const todayDate = new Date().toISOString().split('T')[0];
+                const logDescription = `COLLECTION:${cp.barangay}:${cp.name}`;
+                console.log(`[Collection Log] Attempting to log: ${logDescription}`);  // Debug log
+                await conn.query(
+                    'INSERT INTO calendar_events (event_date, event_type, description) VALUES (?, ?, ?)',
+                    [todayDate, 'COLLECTION', logDescription]
+                );
+                console.log(`[Collection Log] Successfully logged collection for ${cp.barangay}`);
+                io.emit('calendar-update'); // Trigger admin to reload and update graph
+            }
+
+        } catch (err) {
+            console.error(`[SMS/Collection Log] Error processing driver action: ${err.message}`);
+            // Don't fail the response, but log the error
+        } finally {
+            if (conn) conn.release();
+        }
+    }
+    
+    res.json({ message: 'Collection Point capacity updated successfully.', cp_id, percentage: percentageNum, action });
 });
 
 app.post('/register', async (req, res) => {
@@ -179,14 +276,30 @@ app.get('/eta/:truckId', async (req, res) => {
         const lastKnown = app.locals.lastKnownLocations?.[truckId];
         if (!lastKnown?.latitude || !lastKnown?.longitude) return res.status(404).json({ error: 'No location data' });
         const { latitude, longitude } = lastKnown;
-        if (!allStreetMarkers || allStreetMarkers.length === 0) return res.status(500).json({ error: 'Street markers not loaded' });
+        
+        // Use allCollectionPoints as the targets
+        if (!allCollectionPoints || allCollectionPoints.length === 0) return res.status(500).json({ error: 'Collection Points not loaded' });
 
-        let minDistance = Infinity; let nextStop = null;
-        allStreetMarkers.forEach(street => {
-            const distance = Math.sqrt(Math.pow(latitude - street.coords[0], 2) + Math.pow(longitude - street.coords[1], 2));
-            if (distance < minDistance) { minDistance = distance; nextStop = street.name; }
+        let minDistance = Infinity; 
+        let nextStop = null;
+        let highestCapacity = -1;
+
+        allCollectionPoints.forEach(cp => {
+            const distance = Math.sqrt(Math.pow(latitude - cp.latitude, 2) + Math.pow(longitude - cp.longitude, 2));
+            
+            if (cp.capacity_percentage >= 75) {
+                if (cp.capacity_percentage > highestCapacity || (cp.capacity_percentage === highestCapacity && distance < minDistance)) {
+                    minDistance = distance; 
+                    nextStop = cp.name;
+                    highestCapacity = cp.capacity_percentage;
+                }
+            } else if (highestCapacity < 75 && distance < minDistance) {
+                minDistance = distance; 
+                nextStop = cp.name;
+            }
         });
-        const etaMinutes = minDistance < 0.000135 ? 0 : Math.round(minDistance * 10000);
+
+        const etaMinutes = minDistance < 0.0001 ? 0 : Math.round(minDistance * 50000); 
         res.json({ etaMinutes, nextStop });
     } catch (err) {
         console.error(`[ETA] Error for ${truckId}: ${err.message}`);
@@ -237,6 +350,10 @@ app.get('/stats/round-trips', (req, res) => {
     let totalTrips = 0;
     Object.values(stats).forEach(truck => { totalTrips += (truck.roundTrips || 0); });
     res.json({ count: totalTrips });
+});
+
+app.get('/collection-points', async (req, res) => {
+    res.json(allCollectionPoints);
 });
 
 // Register a new driver

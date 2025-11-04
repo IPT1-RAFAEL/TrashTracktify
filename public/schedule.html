@@ -93,18 +93,17 @@
   <script src="https://cdn.socket.io/4.7.2/socket.io.min.js"></script>
   <script src="js/register.js"></script>
 <script>
-    /* Minimal UI wiring for popups and calendar click */
-    document.addEventListener('DOMContentLoaded', async ()=> { // <-- Make this async
+
+    document.addEventListener('DOMContentLoaded', async ()=> { 
       
       if (typeof initTopInfo === 'function') {
-        await initTopInfo(); // <-- WAIT for data to load
+        await initTopInfo();
       }
       
-      // Now these will run *after* data is loaded
       if (typeof generateCalendar === 'function') generateCalendar(); 
       if (typeof displayBarangay === 'function') displayBarangay();
 
-      // register popup controls (open/close)
+    
       const popup = document.getElementById('registerPopup');
       const openBtn = document.getElementById('openRegister');
       

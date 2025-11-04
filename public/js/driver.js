@@ -1,6 +1,5 @@
-const socket = io("https://trashtracktify.onrender.com");
+const socket = io();
 
-// === TOAST NOTIFICATION SYSTEM ===
 function showToast(message, type = 'success', duration = 2000) {
   // Remove any existing toast
   const existing = document.querySelector('.toast');
@@ -121,6 +120,10 @@ let polygons = [];
 let streetGroups = {};
 let allStreetMarkers = [];
 const markerColors = { Tugatog: "green", Acacia: "blue", Tinajeros: "red" };
+let cpMarkers = {};
+let collectionPoints = [];
+let currentDriverCpId = null;
+const PROXIMITY_THRESHOLD = 20;
 
 // --- Icons ---
 const truckIcon = L.icon({
@@ -140,6 +143,14 @@ function getDistance(lat1, lon1, lat2, lon2) {
   const a = Math.sin(dLat / 2) ** 2 + Math.cos(toRad(lat1)) * Math.cos(toRad(lat2)) * Math.sin(dLon / 2) ** 2;
   const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
   return R * c;
+}
+
+function getCpColor(percentage) {
+    if (percentage >= 100) return '#f44336'; // Red (Urgent)
+    if (percentage >= 75) return '#ff9800'; // Orange (High)
+    if (percentage >= 50) return '#2196f3'; // Blue (Moderate)
+    if (percentage > 0) return '#4caf50'; // Green (Low)
+    return '#555'; // Grey (Empty/Default)
 }
 
 // Fetch ETA from server with timeout
@@ -172,30 +183,88 @@ function drawPolygons() {
   });
 }
 
-function drawStreetMarkers() {
-  if (!map || Object.keys(streetGroups).length === 0) return;
-  Object.entries(streetGroups).forEach(([barangay, streets]) => {
-    streets.forEach(item => {
-      if (!item.coords || item.coords.length !== 2) return;
-      L.circleMarker(item.coords, {
-        radius: 5, color: markerColors[barangay] || '#666', fillColor: markerColors[barangay] || '#666', fillOpacity: 0.9
-      }).addTo(map).bindPopup(`<b>${item.name}</b><br>${barangay}`);
-      allStreetMarkers.push({ ...item, barangay });
+function drawCollectionPoints(cpList) {
+    if (!map) return;
+    Object.values(cpMarkers).forEach(m => map.removeLayer(m));
+    cpMarkers = {};
+    collectionPoints = cpList;
+
+    cpList.forEach(cp => {
+        const { cp_id, name, barangay, latitude, longitude, capacity_percentage } = cp;
+        const color = getCpColor(capacity_percentage);
+
+        const marker = L.circleMarker([latitude, longitude], {
+            radius: 8 + (capacity_percentage / 25),
+            color: color,
+            fillColor: color,
+            fillOpacity: 0.9,
+            cpData: cp 
+        }).addTo(map);
+
+        const popupContent = `
+            <b>${name}</b><br>
+            Brgy: ${barangay}<br>
+            Capacity: ${capacity_percentage}%<br>
+            <button id="cpConfirmBtn" data-cp-id="${cp_id}" style="margin-top: 10px; padding: 5px 10px; background: #00ff85; color: white; border: none; border-radius: 4px; cursor: pointer;">
+                Confirm 
+            </button>
+        `;
+        marker.bindPopup(popupContent);
+
+marker.on('popupopen', () => {
+    const confirmBtn = document.getElementById('cpConfirmBtn');
+    if (confirmBtn) {
+        confirmBtn.replaceWith(confirmBtn.cloneNode(true));
+        const newBtn = document.getElementById('cpConfirmBtn');
+        console.log('Popup opened, button found');
+        newBtn.addEventListener('click', async () => {
+            newBtn.disabled = true;
+            newBtn.textContent = 'Sending...';
+
+            const dataCpId = newBtn.getAttribute('data-cp-id'); // Get raw attribute first
+            if (!dataCpId) {
+                console.error('Missing data-cp-id attribute on button');
+                showToast('Invalid Collection Point', 'error');
+                newBtn.disabled = false;
+                newBtn.textContent = 'Confirm';
+                return;
+            }
+
+            const cpId = parseInt(dataCpId, 10);
+            if (isNaN(cpId)) {
+                console.error('Invalid cpId parsed:', dataCpId);
+                showToast('Invalid Collection Point ID', 'error');
+                newBtn.disabled = false;
+                newBtn.textContent = 'Confirm';
+                return;
+            }
+
+            console.log('Debug: cpId defined as', cpId); // Log to confirm it reaches here
+
+            await handleOnTheWayAction(cpId);
+            marker.closePopup();
+        });
+    } else {
+        console.warn('Confirm button not found in popup');
+    }
+        });
+        cpMarkers[cp.cp_id] = marker;
     });
-  });
 }
 
 async function loadAndDrawMapData() {
   try {
     const polyResponse = await fetch('/data/polygon.json');
     if (polyResponse.ok) polygons = await polyResponse.json();
-
-    const streetResponse = await fetch('/data/streets.json');
-    if (streetResponse.ok) streetGroups = await streetResponse.json();
+    
+    // ** NEW: Fetch and Draw Collection Points **
+    const cpResponse = await fetch('/collection-points');
+    let cpList = [];
+    if (cpResponse.ok) cpList = await cpResponse.json();
 
     if(map) { 
         drawPolygons();
-        drawStreetMarkers();
+        drawCollectionPoints(cpList); 
     }
   } catch (error) {
     console.error("Failed to load map data:", error);
@@ -658,6 +727,61 @@ if (resetWithCodeForm && submitResetBtn) {
 }
 
 
+
+socket.on('cp-capacity-update', (data) => {
+    const { cp_id, percentage, name, barangay } = data;
+    const cpId = cp_id;                    
+    const percentageNum = parseInt(percentage, 10);
+
+    // Find the CP object in our local array
+    const cp = collectionPoints.find(p => p.cp_id === cpId);
+    if (!cp) {
+        console.warn(`[CP] Received update for unknown cp_id ${cpId}`);
+        return;
+    }
+
+    cp.capacity_percentage = percentageNum;
+
+    const marker = cpMarkers[cpId];
+    if (marker) {
+        const newColor = getCpColor(percentageNum);
+        marker.setStyle({
+            radius: 8 + (percentageNum / 25),  
+            color: newColor,
+            fillColor: newColor,
+            fillOpacity: 0.9
+        });
+
+        const popupHTML = `
+            <b>${cp.name}</b><br>
+            Brgy: ${cp.barangay}<br>
+            Capacity: ${percentageNum}%<br>
+            <button id="cpConfirmBtn"
+                    data-cp-id="${cpId}"
+                    style="margin-top:10px;padding:5px 10px;background:#00ff85;color:white;border:none;border-radius:4px;cursor:pointer;">
+                Confirm
+            </button>
+        `;
+        marker.setPopupContent(popupHTML);
+        marker.off('popupopen');     
+        marker.on('popupopen', () => {
+            const btn = document.getElementById('cpConfirmBtn');
+            if (!btn) return;
+            const newBtn = btn.cloneNode(true);
+            btn.replaceWith(newBtn);
+
+            newBtn.addEventListener('click', async () => {
+                newBtn.disabled = true;
+                newBtn.textContent = 'Sending…';
+                await handleOnTheWayAction(cpId);
+                marker.closePopup();
+            });
+        });
+    }
+
+    console.log(`[CP] Updated ${cp.name} → ${percentageNum}%`);
+});
+
 // --- Map Initialization (Called after login) ---
 function initializeMapAndMarker() {
     if (!map && mapElement) {
@@ -692,15 +816,16 @@ function initializeMapAndMarker() {
     console.log(`Driver marker created/updated for ${DRIVER_TRUCK_ID}`);
 
     
-    driverMarker.on('dragend', function(e) {
-        const newLatLng = driverMarker.getLatLng();
-        console.log(`[Driver] Truck marker dragged to new position: Lat=${newLatLng.lat}, Lon=${newLatLng.lng}`);
-        sendLocationUpdate(newLatLng, 'drag'); 
-        if (trackingEnabled) {
-            truckPathCoords.push([newLatLng.lat, newLatLng.lng]);
-            updateTruckPath();
-        }
-    });
+driverMarker.on('dragend', function(e) {
+    const newLatLng = driverMarker.getLatLng();
+    console.log(`[Driver] Truck marker dragged to new position: Lat=${newLatLng.lat}, Lon=${newLatLng.lng}`);
+    sendLocationUpdate(newLatLng, 'drag'); 
+    if (trackingEnabled) {
+        truckPathCoords.push([newLatLng.lat, newLatLng.lng]);
+        updateTruckPath();
+    }
+    checkCpProximity(newLatLng.lat, newLatLng.lng);
+});
 
      if (truckMarkers[SIMULATED_TRUCK_ID] && map.hasLayer(truckMarkers[SIMULATED_TRUCK_ID])) {
         map.removeLayer(truckMarkers[SIMULATED_TRUCK_ID]);
@@ -723,92 +848,36 @@ function updateTruckPath() {
     }
 }
 
-// --- Location Sending & Proximity Logic ---
 async function sendLocationUpdate(latLng, source) {
-  if (!trackingEnabled) return;
-  if (!DRIVER_TRUCK_ID || DRIVER_TRUCK_ID === 'Default-Truck-ID') {
-      console.warn("Cannot send location: DRIVER_TRUCK_ID not set.");
-      return;
-   }
-
-  const payload = {
-    latitude: latLng.lat, longitude: latLng.lng,
-    truckId: DRIVER_TRUCK_ID, 
-    driverId: localStorage.getItem('driverName') || "DriverClient", 
-    tripId: "TripAuto", source: source
-  };
-  socket.emit('update-location', payload);
-
-  // Proximity checks...
-  let notificationData = { latitude: latLng.lat, longitude: latLng.lng };
-  let shouldNotify = false;
-  let notificationKey = null;
-
-  
-  if (allStreetMarkers.length > 0) {
-      const nearest = allStreetMarkers.reduce((closest, item) => {
-        if (!item.coords || item.coords.length !== 2) return closest;
-        const dist = getDistance(latLng.lat, latLng.lng, item.coords[0], item.coords[1]);
-        return dist < closest.distance ? { ...item, distance: dist } : closest;
-      }, { distance: Infinity });
-
-      if (nearest.distance <= 15) { 
-        notificationData.streetName = nearest.name;
-        notificationData.barangay = nearest.barangay;
-        notificationKey = `street-${nearest.barangay}-${nearest.name}`;
-        shouldNotify = true;
-      }
-  }
-  if (window.turf && polygons.length > 0) {
-      const point = turf.point([latLng.lng, latLng.lat]);
-      for (const p of polygons) {
-          const ring = p.coords.map(c => [c[1], c[0]]);
-          if (ring.length > 0 && (ring[0][0] !== ring[ring.length - 1][0] || ring[0][1] !== ring[ring.length - 1][1])) {
-               ring.push([...ring[0]]); 
-          }
-          if (ring.length >= 4) { 
-              try {
-                  const poly = turf.polygon([ring]);
-                  if (turf.booleanPointInPolygon(point, poly)) {
-                      notificationData.barangay = p.name;
-                      if (!shouldNotify) notificationKey = `polygon-${p.name}`;
-                      shouldNotify = true;
-                      break;
-                  }
-              } catch(turfError){ console.error("Turf Error processing polygon:", p.name, turfError); }
-          } else {
-               console.warn("Invalid ring for polygon:", p.name);
-          }
-      }
-  }
-  if (shouldNotify && notificationKey) {
-      const last = notificationCooldown.get(notificationKey) || 0;
-      const now = Date.now();
-      if (now - last >= COOLDOWN_MS) {
-          socket.emit('truck-at-location-trigger-sms', {
-              truckId: DRIVER_TRUCK_ID, lat: latLng.lat, lon: latLng.lng,
-              street: notificationData.streetName || null, barangay: notificationData.barangay || null,
-              source
-          });
-          notificationCooldown.set(notificationKey, now);
-          console.log('[driver.js] emitted truck-at-location-trigger-sms', notificationData);
-      }
-  }
-
-  // update ETA for driver's marker popup
-  try {
-    const etaData = await fetchETA(DRIVER_TRUCK_ID);
-    if (driverMarker && etaData) {
-      const etaText = (etaData.etaMinutes !== undefined)
-        ? (etaData.etaMinutes >= 0 ? `ETA: ${etaData.etaMinutes} min${etaData.etaMinutes !== 1 ? 's' : ''}` : `ETA: ${etaData.error || 'N/A'}`)
-        : 'ETA Unknown';
-      if (map.hasLayer(driverMarker)) {
-          driverMarker.setPopupContent(`<b>${DRIVER_TRUCK_ID} (You)</b><br>Next: ${etaData.nextStop || 'N/A'}<br>${etaText}`);
-      }
+    if (!trackingEnabled) return;
+    if (!DRIVER_TRUCK_ID || DRIVER_TRUCK_ID === 'Default-Truck-ID') {
+        console.warn("Cannot send location: DRIVER_TRUCK_ID not set.");
+        return;
     }
-  } catch (err) {
-    console.warn('ETA update failed', err);
-  }
+
+    const payload = {
+        latitude: latLng.lat, longitude: latLng.lng,
+        truckId: DRIVER_TRUCK_ID, 
+        driverId: localStorage.getItem('driverName') || "DriverClient", 
+        tripId: "TripAuto", source: source
+    };
+    socket.emit('update-location', payload);
+
+    // Update ETA for driver's marker popup
+    try {
+        const etaData = await fetchETA(DRIVER_TRUCK_ID);
+        if (driverMarker && etaData) {
+            const etaText = (etaData.etaMinutes !== undefined)
+                ? (etaData.etaMinutes >= 0 ? `ETA: ${etaData.etaMinutes} min${etaData.etaMinutes !== 1 ? 's' : ''}` : `ETA: ${etaData.error || 'N/A'}`)
+                : 'ETA Unknown';
+            if (map.hasLayer(driverMarker)) {
+                driverMarker.setPopupContent(`<b>${DRIVER_TRUCK_ID} (You)</b><br>Next: ${etaData.nextStop || 'N/A'}<br>${etaText}`);
+            }
+        }
+    } catch (err) {
+        console.warn('ETA update failed', err);
+    }
+    checkCpProximity(latLng.lat, latLng.lng);
 }
 
 // --- Geolocation Watch Logic ---
@@ -997,7 +1066,78 @@ async function loadSchedule() {
 }
 socket.on('schedule-update', loadSchedule);
 
-// --- Initial DOM Content Loaded ---
+async function handleOnTheWayAction(cpId) {
+    if (!cpId || !DRIVER_TRUCK_ID || DRIVER_TRUCK_ID === 'Default-Truck-ID') {
+        console.warn('[Driver Debug] Cannot handle action: Invalid cpId or truckId');
+        showToast('Action Failed: Invalid Truck ID', 'error');
+        return;
+    }
+
+    const cp = collectionPoints.find(p => p.cp_id === cpId);
+    if (!cp) {
+        console.warn('[Driver Debug] CP not found for id:', cpId);
+        return;
+    }
+
+    try {
+        console.log(`[Driver Debug] Sending on-the-way for CP ${cp.name} (Barangay: ${cp.barangay}, Truck: ${DRIVER_TRUCK_ID})`);
+        const res = await fetch('/cp/capacity', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ 
+                cp_id: cpId, 
+                percentage: 0, // Reset capacity
+                updated_by: `Driver ${localStorage.getItem('driverName') || 'Unknown'}`,
+                action: 'on-the-way',
+                truckId: DRIVER_TRUCK_ID
+            })
+        });
+
+        if (!res.ok) throw new Error(`HTTP ${res.status}: Failed to reset capacity or log collection.`);
+
+        showToast(`On The Way Confirmed & Capacity Reset for Brgy ${cp.barangay}`, 'success');
+        console.log('[Driver Debug] Action successful, collection should be logged.');
+
+    } catch (err) {
+        console.error('[Driver Debug] Action failed:', err);
+        showToast('Action Failed', 'error');
+    }
+}
+
+async function checkCpProximity(currentLat, currentLon) {
+    if (!DRIVER_TRUCK_ID || DRIVER_TRUCK_ID === 'Default-Truck-ID') return;
+
+    for (const cp of collectionPoints) {
+        const distance = getDistance(currentLat, currentLon, cp.latitude, cp.longitude);
+        const lastNotified = notificationCooldown.get(cp.cp_id) || 0;
+
+        if (distance <= PROXIMITY_THRESHOLD && (Date.now() - lastNotified > COOLDOWN_MS)) {
+            try {
+                const res = await fetch('/cp/capacity', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({
+                        cp_id: cp.cp_id,
+                        percentage: cp.capacity_percentage,
+                        updated_by: `Driver ${localStorage.getItem('driverName') || 'Unknown'}`,
+                        action: 'arrived',
+                        truckId: DRIVER_TRUCK_ID
+                    })
+                });
+
+                if (!res.ok) throw new Error("SMS failed");
+
+                showToast(`Arrived at ${cp.name} (Brgy ${cp.barangay})`, 'success');
+                notificationCooldown.set(cp.cp_id, Date.now());
+
+            } catch (err) {
+                console.error('Arrived SMS error:', err);
+                showToast('Arrived SMS Failed', 'error');
+            }
+        }
+    }
+}
+
 document.addEventListener("DOMContentLoaded", () => {
     console.log("DOM Loaded. Checking login status...");
 
@@ -1032,4 +1172,3 @@ document.addEventListener("DOMContentLoaded", () => {
         }
     }
 });
-

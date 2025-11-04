@@ -1,5 +1,4 @@
-const socket = io("https://trashtracktify.onrender.com");
-
+const socket = io();
 // === TOAST NOTIFICATION SYSTEM ===
 function showToast(message, type = 'success', duration = 2000) {
   // Remove any existing toast
@@ -79,7 +78,8 @@ const residentTableBody = document.querySelector('#residentTable tbody');
 
 // In-memory data
 let SCHEDULE_LOOKUP = {};
-let CALENDAR_EVENTS = {}; // *** NEW: Stores fetched events { 'YYYY-MM-DD': { type, description }, ... }
+let CALENDAR_EVENTS = [];
+let ALL_COLLECTION_POINTS = {};
 
 const BARANGAYS = ['Tugatog','Acacia','Tinajeros'];
 const DAYS = ['MON','TUE','WED','THU','FRI','SAT','SUN'];
@@ -95,11 +95,148 @@ function setRoundTrips(n) {
     if (roundCountEl) roundCountEl.textContent = n;
 }
 
+function renderCollectionChart() {
+    const container = document.getElementById('collectionChartsContainer');
+    if (!container) return;
+    
+    // Clear container
+    container.innerHTML = '';
+    
+    // Destroy old charts
+    BARANGAYS.forEach(b => {
+        const chartId = `${b}Chart`;
+        if (window[chartId] && typeof window[chartId].destroy === 'function') {
+            window[chartId].destroy();
+            window[chartId] = null;
+        }
+    });
+    if (window.masterChart) {
+        window.masterChart.destroy();
+        window.masterChart = null;
+    }
+
+    const collectionCounts = {};
+    BARANGAYS.forEach(b => collectionCounts[b] = {});
+
+    // Parse events
+    CALENDAR_EVENTS.forEach(ev => {
+        if (ev.event_type === 'COLLECTION') {
+            const match = ev.description.match(/^COLLECTION:(.+?):(.+)$/);
+            if (match) {
+                const barangay = match[1];
+                const cpName = match[2];
+                if (BARANGAYS.includes(barangay)) {
+                    collectionCounts[barangay][cpName] = (collectionCounts[barangay][cpName] || 0) + 1;
+                }
+            }
+        }
+    });
+
+    // Render one chart per barangay
+    BARANGAYS.forEach(barangay => {
+        if (!ALL_COLLECTION_POINTS[barangay] || ALL_COLLECTION_POINTS[barangay].length === 0) return;
+
+        const card = document.createElement('div');
+        card.className = 'chart-card';
+
+        const title = document.createElement('h3');
+        title.textContent = `${barangay} Collections`;
+        title.style.cssText = 'color: var(--accent); text-align: center; margin: 0 0 12px 0; font-size: 1.1rem;';
+
+        // Create a scroll wrapper for the canvas
+        const scrollWrapper = document.createElement('div');
+        scrollWrapper.className = 'chart-scroll';
+
+        const canvas = document.createElement('canvas');
+        canvas.height = 300; // Fixed height
+        scrollWrapper.appendChild(canvas);
+        card.appendChild(title);
+        card.appendChild(scrollWrapper);
+        container.appendChild(card);
+
+        // Sort labels numerically by point number
+        const labels = ALL_COLLECTION_POINTS[barangay].slice().sort((a, b) => {
+            const numA = parseInt(a.split(' ').pop() || '0', 10);
+            const numB = parseInt(b.split(' ').pop() || '0', 10);
+            return numA - numB;
+        });
+
+        const data = labels.map(cp => collectionCounts[barangay][cp] || 0);
 
 
 
+        const colorMap = {
+            'Tugatog': '#00ff85',
+            'Acacia': '#2196f3',
+            'Tinajeros': '#f44336'
+        };
 
-// --- Data Loading ---
+        window[`${barangay}Chart`] = new Chart(canvas, {
+            type: 'bar',
+            data: {
+                labels: labels.map(l => l.split(' ').pop()),
+                datasets: [{
+                    label: 'Collections',
+                    data: data,
+                    backgroundColor: colorMap[barangay] || '#888',
+                    borderRadius: 6,
+                    barThickness: 24,
+                }]
+            },
+            options: {
+                responsive: false, // Disable responsive to allow custom width
+                maintainAspectRatio: false,
+                animation: { duration: 600 },
+                plugins: {
+                    legend: { display: false },
+                    tooltip: {
+                        callbacks: {
+                            title: (items) => labels[items[0].dataIndex],
+                            label: (item) => `Count: ${item.formattedValue}`
+                        }
+                    }
+                },
+                scales: {
+                    y: {
+                        beginAtZero: true,
+                        ticks: { stepSize: 1, color: '#e0e0e0' },
+                        grid: { display: false },
+                        title: { display: true, text: 'Count', color: '#aaa' }
+                    },
+                    x: {
+                        ticks: { color: '#e0e0e0' },
+                        grid: { display: false },
+                        title: { display: true, text: 'Point #', color: '#aaa' }
+                    }
+                }
+            }
+        });
+    });
+}
+
+async function loadCollectionPointsData() {
+    try {
+        const response = await fetch('/collection-points');
+        if (!response.ok) throw new Error(`HTTP error! status: ${response.status}`);
+        const cpList = await response.json();
+        
+        ALL_COLLECTION_POINTS = {};
+        cpList.forEach(cp => {
+            if (!ALL_COLLECTION_POINTS[cp.barangay]) {
+                ALL_COLLECTION_POINTS[cp.barangay] = [];
+            }
+            if (!ALL_COLLECTION_POINTS[cp.barangay].includes(cp.name)) {
+                ALL_COLLECTION_POINTS[cp.barangay].push(cp.name);
+            }
+        });
+        // Sort CPs for consistent chart ordering
+        Object.values(ALL_COLLECTION_POINTS).forEach(list => list.sort());
+
+    } catch (error) {
+        console.error("[Adstats] Failed to load collection point data for charting:", error);
+    }
+}
+
 async function loadSchedule() {
     try {
         const res = await fetch('/schedule');
@@ -116,23 +253,25 @@ async function loadSchedule() {
     }
 }
 
-// *** NEW ***
+
 async function loadCalendarEvents() {
     try {
         const res = await fetch('/calendar/events');
         if (!res.ok) throw new Error(`HTTP ${res.status}`);
-        const events = await res.json();
-        CALENDAR_EVENTS = {};
-        events.forEach(event => {
-            CALENDAR_EVENTS[event.event_date] = {
-                type: event.event_type,
-                description: event.description
-            };
-        });
+        
+        // Directly assign the array from the server
+        CALENDAR_EVENTS = await res.json(); 
+        
         console.log("Calendar events loaded:", CALENDAR_EVENTS);
+        renderCollectionChart();
     } catch (err) {
         console.error("Failed to load calendar events:", err);
-        CALENDAR_EVENTS = {};
+        
+        // FIX: Set to an empty ARRAY, not an object
+        CALENDAR_EVENTS = []; 
+        
+        showToast('Failed to load calendar events', 'error');
+        renderCollectionChart(); // This will now safely render blank charts instead of crashing
     }
 }
 
@@ -352,7 +491,8 @@ editForm?.addEventListener('submit', async (e) => {
 async function loadInitial() {
     try {
         await loadSchedule();
-        await loadCalendarEvents();
+        await loadCollectionPointsData();
+        await loadCalendarEvents(); 
         generateCalendar();
         await loadAndRenderUsers();
         try {
@@ -362,18 +502,18 @@ async function loadInitial() {
     } catch (err) { console.warn('initial load failed', err); }
 }
 
-// --- Socket Listeners ---
+
 socket.on('truck-status', (data) => { if (data?.percentFull !== undefined) setCapacity(data.percentFull); });
 socket.on('round-trip', (data) => { if (data?.count !== undefined) setRoundTrips(data.count); });
 socket.on('schedule-update', loadSchedule);
 socket.on('registered-stats-update', loadAndRenderUsers);
-// socket.on('trip-update', (count) => setRoundTrips(count)); // This seems redundant with 'round-trip'
-
-// *** NEW ***
 socket.on('calendar-update', async () => {
     console.log("Calendar update received, reloading events and calendar...");
+    if (Object.keys(ALL_COLLECTION_POINTS).length === 0) {
+        await loadCollectionPointsData();
+    }
     await loadCalendarEvents();
-    generateCalendar();
+    renderCollectionChart();
 });
 
 // Start initial load
