@@ -21,6 +21,7 @@ body {
   -webkit-font-smoothing: antialiased;
 }
 
+
 /* Top Bar */
 .top-bar, .top-nav {
   position: fixed;
@@ -74,10 +75,11 @@ body {
 /* Main Layout */
 main#content {
   margin-top: 60px;
-  margin-bottom: var(--nav-height);
   padding: 12px;
+  padding-bottom: calc(var(--nav-height) + 12px);
   display: flex;
   justify-content: center;
+  align-items: flex-start;
 }
 
 .container {
